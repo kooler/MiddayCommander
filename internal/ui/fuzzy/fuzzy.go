@@ -263,10 +263,6 @@ func fuzzyFilter(paths []string, query, rootDir string) []match {
 		var results []match
 		limit := 1000
 		for _, p := range paths {
-			rel, _ := filepath.Rel(rootDir, p)
-			if rel == "" {
-				rel = p
-			}
 			results = append(results, match{path: p, score: 0})
 			if len(results) >= limit {
 				break
