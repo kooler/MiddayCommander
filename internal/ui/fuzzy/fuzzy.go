@@ -394,14 +394,6 @@ func renderWithHighlights(s string, matchIdxs []int, normal, highlight lipgloss.
 	return rendered
 }
 
-func padLine(s string, width int, style lipgloss.Style) string {
-	visWidth := lipgloss.Width(s)
-	if visWidth < width {
-		s += style.Render(strings.Repeat(" ", width-visWidth))
-	}
-	return s
-}
-
 func padStr(s string, width int) string {
 	if len(s) >= width {
 		return s[:width]

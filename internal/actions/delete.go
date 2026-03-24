@@ -5,11 +5,6 @@ import (
 	"path/filepath"
 )
 
-// DeleteResult is sent when a delete operation completes.
-type DeleteResult struct {
-	Err error
-}
-
 // Delete removes all specified paths.
 func Delete(paths []string, progressFn func(Progress)) error {
 	p := Progress{

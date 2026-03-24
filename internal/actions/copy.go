@@ -8,11 +8,6 @@ import (
 	"path/filepath"
 )
 
-// CopyResult is sent when a copy operation completes.
-type CopyResult struct {
-	Err error
-}
-
 // Copy recursively copies sources to destDir, reporting progress via progressFn.
 func Copy(sources []string, destDir string, progressFn func(Progress)) error {
 	totalFiles, totalBytes := countFilesAndBytes(sources)

@@ -6,11 +6,6 @@ import (
 	"path/filepath"
 )
 
-// MoveResult is sent when a move operation completes.
-type MoveResult struct {
-	Err error
-}
-
 // Move moves sources to destDir. Tries os.Rename first (fast, same device),
 // falls back to copy+delete for cross-device moves.
 func Move(sources []string, destDir string, progressFn func(Progress)) error {

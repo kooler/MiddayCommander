@@ -18,11 +18,6 @@ func New(root string) *FS {
 	return &FS{root: root}
 }
 
-// Root returns the root path of this filesystem.
-func (f *FS) Root() string {
-	return f.root
-}
-
 func (f *FS) resolve(name string) string {
 	return filepath.Join(f.root, name)
 }

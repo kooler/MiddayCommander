@@ -20,9 +20,6 @@ type SelectMsg struct {
 // DismissMsg is sent when the user closes the bookmark list.
 type DismissMsg struct{}
 
-// AddBookmarkMsg is sent when the user wants to bookmark the current directory.
-type AddBookmarkMsg struct{}
-
 // Model is the bookmark list overlay.
 type Model struct {
 	store   *bookmark.Store
@@ -334,14 +331,6 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 
 	return overlay.RenderBox("Bookmarks", contentLines, footer, boxW, boxH,
 		accent, bg, highlight)
-}
-
-func padLine(s string, width int, style lipgloss.Style) string {
-	visWidth := lipgloss.Width(s)
-	if visWidth < width {
-		s += style.Render(strings.Repeat(" ", width-visWidth))
-	}
-	return s
 }
 
 func padStr(s string, width int) string {

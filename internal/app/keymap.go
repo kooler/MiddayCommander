@@ -24,21 +24,6 @@ type KeyMap struct {
 	Help        key.Binding
 }
 
-// PanelKeyMap defines per-panel keybindings.
-type PanelKeyMap struct {
-	Up           key.Binding
-	Down         key.Binding
-	PageUp       key.Binding
-	PageDown     key.Binding
-	Home         key.Binding
-	End          key.Binding
-	GoBack       key.Binding
-	ToggleSelect key.Binding
-	SelectUp     key.Binding
-	SelectDown   key.Binding
-	QuickSearch  key.Binding
-}
-
 // KeyMapFromConfig builds the global keymap from config.
 func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 	return KeyMap{
@@ -56,23 +41,6 @@ func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 		FuzzyFind:   binding(keys.FuzzyFind, "find"),
 		Bookmarks:   binding(keys.Bookmarks, "bookmarks"),
 		Help:        binding(keys.Help, "help"),
-	}
-}
-
-// PanelKeyMapFromConfig builds the panel keymap from config.
-func PanelKeyMapFromConfig(keys config.KeyBindings) PanelKeyMap {
-	return PanelKeyMap{
-		Up:           binding(keys.Up, "up"),
-		Down:         binding(keys.Down, "down"),
-		PageUp:       binding(keys.PageUp, "page up"),
-		PageDown:     binding(keys.PageDown, "page down"),
-		Home:         binding(keys.Home, "home"),
-		End:          binding(keys.End, "end"),
-		GoBack:       binding(keys.GoBack, "go back"),
-		ToggleSelect: binding(keys.ToggleSelect, "toggle select"),
-		SelectUp:     binding(keys.SelectUp, "select up"),
-		SelectDown:   binding(keys.SelectDown, "select down"),
-		QuickSearch:  binding(keys.QuickSearch, "quick search"),
 	}
 }
 

@@ -3,7 +3,6 @@ package menubar
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/kooler/MiddayCommander/internal/config"
@@ -15,11 +14,6 @@ type Item struct {
 	Key      string // display label, e.g. "F5"
 	Label    string // action label, e.g. "Copy"
 	RawKey   string // actual key string for matching clicks, e.g. "f5"
-}
-
-// ClickMsg is sent when a menu bar item is clicked.
-type ClickMsg struct {
-	Key string // the raw key, e.g. "f5"
 }
 
 // DefaultItems returns the default menu bar items.
@@ -48,13 +42,6 @@ func itemFromCfg(keys config.StringOrList, label string) Item {
 		Label:  label,
 		RawKey: raw,
 	}
-}
-
-func item(display, label, raw string) Item {
-	if display == "" {
-		display = formatKeyDisplay(raw)
-	}
-	return Item{Key: display, Label: label, RawKey: raw}
 }
 
 // formatKeyDisplay turns "f5" into "F5", "ctrl+g" into "C-g", etc.
@@ -118,15 +105,6 @@ func View(th theme.Theme, width int, items []Item) string {
 	}
 
 	return b.String()
-}
-
-// HandleMouse processes a mouse click on the menu bar row and returns a tea.Msg if hit.
-func HandleMouse(x, width int, items []Item) tea.Msg {
-	raw := HandleClick(x, width, items)
-	if raw == "" {
-		return nil
-	}
-	return ClickMsg{Key: raw}
 }
 
 func padOrTrunc(s string, width int) string {

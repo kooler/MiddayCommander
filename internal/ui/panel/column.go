@@ -2,7 +2,6 @@ package panel
 
 import (
 	"fmt"
-	"io/fs"
 	"time"
 )
 
@@ -27,9 +26,4 @@ func FormatTime(t time.Time) string {
 		return t.Format("Jan 02 15:04")
 	}
 	return t.Format("Jan 02  2006")
-}
-
-// FormatPerms returns a Unix-style permission string.
-func FormatPerms(mode fs.FileMode) string {
-	return mode.String()
 }
