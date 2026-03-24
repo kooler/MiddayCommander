@@ -1,12 +1,30 @@
 package theme
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 func TestLoadByName(t *testing.T) {
+	// Set up a temp config dir so LoadByName finds the theme file
+	// (the repo's themes/ dir isn't in ~/.config/mdc/themes on CI).
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+	themesDir := filepath.Join(tmp, "mdc", "themes")
+	if err := os.MkdirAll(themesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "themes", "catppuccin-mocha.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(themesDir, "catppuccin-mocha.toml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	th, err := LoadByName("catppuccin-mocha")
 	if err != nil {
 		t.Fatalf("LoadByName error: %v", err)
