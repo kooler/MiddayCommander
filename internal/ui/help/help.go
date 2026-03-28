@@ -97,6 +97,7 @@ func (m Model) buildEntries() []entry {
 		{"Bookmarks", fmtKeys(k.Bookmarks)},
 		{"Quick search", fmtKeys(k.QuickSearch)},
 		{"Theme picker", fmtKeys(k.ThemePicker)},
+		{"Run command", fmtKeys(k.CmdExec)},
 		{"Help", fmtKeys(k.Help)},
 		{"Quit", fmtKeys(k.Quit)},
 	}

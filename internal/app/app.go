@@ -14,6 +14,7 @@ import (
 	"github.com/kooler/MiddayCommander/internal/bookmark"
 	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/ui/bookmarks"
+	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
 	"github.com/kooler/MiddayCommander/internal/ui/dialog"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
 	"github.com/kooler/MiddayCommander/internal/ui/help"
@@ -61,6 +62,7 @@ type Model struct {
 	bookmarks   *bookmarks.Model
 	help        *help.Model
 	themePicker *themepicker.Model
+	cmdExec     *cmdexec.Model
 
 	// Saved theme for reverting on Esc in theme picker
 	themeBeforePick theme.Theme
@@ -234,6 +236,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fuzzy = nil
 		return m, nil
 
+	// Command execution messages
+	case cmdexec.CommandDoneMsg:
+		if m.cmdExec != nil {
+			newCE, cmd := m.cmdExec.Update(msg)
+			m.cmdExec = &newCE
+			return m, cmd
+		}
+		return m, nil
+
+	case cmdexec.DismissMsg:
+		m.cmdExec = nil
+		return m, m.refreshBothPanels()
+
 	// File action messages from panel (configurable behavior)
 	case panel.OpenFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.EnterAction)
@@ -341,6 +356,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Command execution gets priority when active
+		if m.cmdExec != nil {
+			newCE, cmd := m.cmdExec.Update(msg)
+			m.cmdExec = &newCE
+			return m, cmd
+		}
+
 		// Dialog gets priority
 		if m.dialog != nil {
 			m.dialog.Update(msg)
@@ -411,6 +433,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keyMap.ThemePicker):
 			return m.startThemePicker()
+
+		case key.Matches(msg, m.keyMap.CmdExec):
+			return m.startCmdExec()
 		}
 
 		// Delegate to active panel
@@ -454,6 +479,10 @@ func (m Model) View() string {
 		box := m.fuzzy.View(m.theme, m.width, m.height)
 		bw, bh := m.fuzzy.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.cmdExec != nil {
+		box := m.cmdExec.View(m.theme, m.width, m.height)
+		bw, bh := m.cmdExec.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
 	} else if m.dialog != nil {
 		box := m.dialog.View(m.theme, m.width, m.height)
 		bw, bh := m.dialog.BoxSize(m.width, m.height)
@@ -493,6 +522,8 @@ func (m Model) dispatchKey(raw string) (tea.Model, tea.Cmd) {
 		return m.startFuzzyFind()
 	case contains(cfg.ThemePicker, raw):
 		return m.startThemePicker()
+	case contains(cfg.CmdExec, raw):
+		return m.startCmdExec()
 	}
 	return m, nil
 }
@@ -620,6 +651,12 @@ func (m Model) startThemePicker() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, themepicker.FetchRemote(localKeys)
+}
+
+func (m Model) startCmdExec() (tea.Model, tea.Cmd) {
+	ce := cmdexec.New(m.activePanel().Path(), m.width, m.height)
+	m.cmdExec = &ce
+	return m, nil
 }
 
 func (m Model) startFuzzyFind() (tea.Model, tea.Cmd) {
