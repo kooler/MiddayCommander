@@ -39,6 +39,17 @@ changelog:
       - "^ci:"
       - "^chore:"
 
+nfpms:
+  - package_name: mdc
+    vendor: kooler
+    homepage: https://github.com/kooler/MiddayCommander
+    maintainer: kooler
+    description: "A modern dual-panel terminal file manager"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+
 brews:
   - repository:
       owner: kooler
