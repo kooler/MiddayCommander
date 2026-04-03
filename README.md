@@ -1,30 +1,29 @@
 # Midday Commander
 
+A modern dual-panel terminal file manager written in Go, inspired by Midnight Commander.
+
+Midday Commander (mdc) brings the classic dual-panel file management paradigm into the modern terminal with fuzzy finding, bookmarks, archive browsing, themes and customizable keybindings.
+
 ![Midday Commander](images/sc_general.png)
 
-**Bookmarks** — frecency-scored bookmarks with filtering
+**Bookmarks** — bookmarks for most visited locations
 ![Bookmarks](images/sc_bookmarks.png)
 
 **Themes** — TOML-based themes with live preview
 ![Themes](images/sc_themes.png)
 
-**Fuzzy Find** — recursive fuzzy file search
+**Fuzzy Find**
 ![Fuzzy Find](images/sc_fzf.png)
-
-A modern dual-panel terminal file manager written in Go, inspired by Midnight Commander.
-
-Midday Commander (mdc) brings the classic dual-panel file management paradigm into the modern terminal with fuzzy finding, frecency-scored bookmarks, transparent archive browsing, and a fully customizable TOML-based theme and keybinding system.
 
 ## Features
 
 - **Dual-panel file browsing** with independent navigation and selection
 - **Archive browsing** - enter ZIP, TAR, 7z, RAR, GZ, BZ2, XZ, LZ4 files as virtual directories
 - **Fuzzy finder** - recursive file search with real-time fuzzy matching
-- **Bookmarks** with frecency scoring (frequency + recency) and filtering
-- **TOML themes** - full color customization with palette variables (ships with MC Classic and Catppuccin Mocha)
+- **Bookmarks** to quickly jump to most visited locations
 - **Configurable keybindings** - every key is remappable via `config.toml`
 - **File operations** - copy, move, delete, rename, mkdir with confirmation dialogs
-- **Live theme picker** - browse and preview themes in real-time with Ctrl-T
+- **Live theme picker** - browse and preview themes with Ctrl-T
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
 - **Quick search** - start typing to jump to matching files instantly
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
@@ -34,7 +33,9 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 
 ## Installation
 
-### From source
+The simplest way is to download a binary from the [Releases](https://github.com/kooler/MiddayCommander/releases) in Github.
+
+### Build from source
 
 Requires Go 1.21 or later.
 
@@ -172,10 +173,7 @@ See [`config.example.toml`](config.example.toml) for the full reference.
 
 ## Themes
 
-Themes are TOML files stored at `~/.config/mdc/themes/`. Two themes are included:
-
-- **mc-classic** - Traditional Midnight Commander blue theme
-- **catppuccin-mocha** - Modern dark theme using the [Catppuccin](https://github.com/catppuccin/catppuccin) palette
+Themes are TOML files stored at `~/.config/mdc/themes/`.
 
 ### Live theme picker
 
@@ -228,41 +226,6 @@ fkey_label_bg = "blue"
 ```
 
 Colors can be hex values (`"#89b4fa"`), ANSI color numbers (`"4"`), or palette references (`"blue"`). Any missing values fall back to the built-in default theme.
-
-## Architecture
-Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) using the Elm Architecture (Model-Update-View).
-
-### Virtual Filesystem (VFS) & Archive Browsing
-
-The `vfs` package defines a filesystem abstraction that lets panels browse different backends through a uniform interface.
-
-**Interfaces** (`internal/vfs/vfs.go`):
-
-- **`vfs.FS`** — read-only filesystem composed of Go's standard `fs.FS`, `fs.ReadDirFS`, and `fs.StatFS` interfaces. Any type that implements `Open`, `ReadDir`, and `Stat` satisfies this interface.
-- **`vfs.WritableFS`** — extends `vfs.FS` with mutation operations: `Create`, `Mkdir`, `MkdirAll`, `Remove`, `RemoveAll`, and `Rename`.
-
-**Implementations:**
-
-- **`vfs/local.FS`** — wraps the `os` package to provide full read-write access to the local filesystem. Implements `vfs.WritableFS`. All paths are resolved relative to a configurable root directory.
-- **`vfs/archive.FS`** — provides read-only browsing inside archive files. Implements `vfs.FS` only (no write operations). Powered by `mholt/archiver/v4`.
-
-**How archive browsing works:**
-
-1. When the user presses Enter on a file, `archive.IsArchive()` probes the file using `archiver.Identify()` which detects the format by filename and magic bytes.
-2. If recognized, `archive.New()` wraps the archive in an `archiver.ArchiveFS` — an `fs.FS`-compatible adapter that exposes archive contents as a virtual directory tree.
-3. The panel switches its underlying filesystem from `local.FS` to `archive.FS`. Because both satisfy `vfs.FS`, the panel's navigation, rendering, and sorting code works identically on both.
-4. Pressing Backspace at the archive root restores the original `local.FS` and path.
-
-Supported formats: ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ, 7z, RAR, GZ, BZ2, XZ, LZ4, LZ, ZST.
-
-**Extending with new backends:**
-
-To add a new filesystem backend (e.g., SFTP, S3, WebDAV):
-
-1. Create a new package under `internal/vfs/` (e.g., `internal/vfs/sftp/`).
-2. Implement `vfs.FS` for read-only access, or `vfs.WritableFS` for full read-write.
-3. The panel will work with the new backend without any changes to UI code.
-
 
 ## Contributing
 
