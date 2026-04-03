@@ -1,5 +1,16 @@
 # Midday Commander
 
+![Midday Commander](images/sc_general.png)
+
+**Bookmarks** — frecency-scored bookmarks with filtering
+![Bookmarks](images/sc_bookmarks.png)
+
+**Themes** — TOML-based themes with live preview
+![Themes](images/sc_themes.png)
+
+**Fuzzy Find** — recursive fuzzy file search
+![Fuzzy Find](images/sc_fzf.png)
+
 A modern dual-panel terminal file manager written in Go, inspired by Midnight Commander.
 
 Midday Commander (mdc) brings the classic dual-panel file management paradigm into the modern terminal with fuzzy finding, frecency-scored bookmarks, transparent archive browsing, and a fully customizable TOML-based theme and keybinding system.
