@@ -33,7 +33,16 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 
 ## Installation
 
-The simplest way is to download a binary from the [Releases](https://github.com/kooler/MiddayCommander/releases) in Github.
+### Using Homebrew
+
+```bash
+brew install kooler/apps/MiddayCommander
+```
+
+Run: `mdc`
+
+### From releases (MacOS/Windows/Linux)
+Download a binary from the [Releases](https://github.com/kooler/MiddayCommander/releases) in Github.
 
 ### Build from source
 
