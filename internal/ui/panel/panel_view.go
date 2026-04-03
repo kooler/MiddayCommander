@@ -68,7 +68,7 @@ func (m Model) View(th theme.Theme) string {
 		footerText = fmt.Sprintf(" Search: %s_ ", m.searchQuery)
 	} else {
 		count := len(m.entries)
-		if m.entries != nil && m.path != "/" {
+		if m.entries != nil && !isRootPath(m.path) {
 			count-- // exclude ".."
 		}
 		footerText = fmt.Sprintf(" %d files ", count)

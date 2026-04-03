@@ -30,12 +30,12 @@ type KeyMap struct {
 // Model represents a single file panel.
 type Model struct {
 	fs       vfs.FS
-	path     string         // absolute path of current directory
-	entries  []fs.DirEntry  // directory contents (sorted)
-	infos    []fs.FileInfo  // cached FileInfo for each entry
-	cursor   int            // highlighted entry index
-	offset   int            // scroll offset for viewport
-	selected map[int]bool   // tagged/selected entries
+	path     string        // absolute path of current directory
+	entries  []fs.DirEntry // directory contents (sorted)
+	infos    []fs.FileInfo // cached FileInfo for each entry
+	cursor   int           // highlighted entry index
+	offset   int           // scroll offset for viewport
+	selected map[int]bool  // tagged/selected entries
 	sortMode SortMode
 	width    int
 	height   int // height available for file list rows
@@ -47,11 +47,11 @@ type Model struct {
 	searchQuery string
 
 	// Archive browsing state
-	inArchive   bool       // true when browsing inside an archive
+	inArchive   bool        // true when browsing inside an archive
 	archiveFS   *archive.FS // the archive VFS (nil when not in archive)
-	archivePath string     // path within the archive
-	realFS      vfs.FS     // the original filesystem (to restore when leaving archive)
-	realPath    string     // the directory containing the archive file
+	archivePath string      // path within the archive
+	realFS      vfs.FS      // the original filesystem (to restore when leaving archive)
+	realPath    string      // the directory containing the archive file
 
 	keyMap KeyMap
 }
@@ -199,7 +199,7 @@ func (m *Model) HandleDirLoaded(msg DirLoadedMsg) {
 
 	// Prepend ".." entry unless at root
 	var all []fs.DirEntry
-	if m.path != "/" {
+	if !isRootPath(m.path) {
 		all = append(all, parentEntry{})
 	}
 	all = append(all, msg.Entries...)
@@ -479,7 +479,7 @@ func (m *Model) goUp() tea.Cmd {
 		})
 	}
 
-	if m.path == "/" {
+	if isRootPath(m.path) {
 		return nil
 	}
 	oldDir := filepath.Base(m.path)
@@ -536,10 +536,20 @@ func (m *Model) ChangeSortMode() {
 	SortEntries(m.entries, m.sortMode)
 }
 
+func isRootPath(path string) bool {
+	if path == string(filepath.Separator) {
+		return true
+	}
+	if len(path) == 3 && path[1] == ':' {
+		return true
+	}
+	return false
+}
+
 // parentEntry is a synthetic ".." directory entry.
 type parentEntry struct{}
 
 func (parentEntry) Name() string               { return ".." }
-func (parentEntry) IsDir() bool                 { return true }
-func (parentEntry) Type() fs.FileMode           { return fs.ModeDir }
-func (parentEntry) Info() (fs.FileInfo, error)   { return nil, nil }
+func (parentEntry) IsDir() bool                { return true }
+func (parentEntry) Type() fs.FileMode          { return fs.ModeDir }
+func (parentEntry) Info() (fs.FileInfo, error) { return nil, nil }
