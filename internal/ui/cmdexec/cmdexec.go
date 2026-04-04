@@ -335,12 +335,12 @@ func (m Model) completeCurrentWord() Model {
 	common := commonPrefix(candidates)
 	if len(common) > len(prefix) {
 		m.input = m.input[:start] + common + m.input[end:]
-		m.inputPos = start + len(common)
+		m.inputPos = start + len(common) - (end - m.inputPos)
 	}
 
 	if len(candidates) == 1 {
 		m.input = m.input[:start] + candidates[0] + m.input[end:]
-		m.inputPos = start + len(candidates[0])
+		m.inputPos = start + len(candidates[0]) - (end - m.inputPos)
 	}
 
 	return m
