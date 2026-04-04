@@ -1,0 +1,23 @@
+# Midday Commander remote profiles
+#
+# This file is intentionally limited to non-secret connection metadata.
+# Do not store plaintext passwords here.
+
+[[profiles]]
+name = "lab-agent"
+host = "192.168.1.30"
+port = 22
+user = "nexus"
+path = "/home/nexus"
+auth = "agent"
+known_hosts_file = "~/.ssh/known_hosts"
+
+[[profiles]]
+name = "deploy-key"
+host = "files.example.com"
+port = 2222
+user = "deploy"
+path = "/srv/releases"
+auth = "key"
+identity_file = "~/.ssh/id_ed25519"
+known_hosts_file = "~/.ssh/known_hosts"
