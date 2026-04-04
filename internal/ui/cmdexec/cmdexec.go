@@ -364,14 +364,17 @@ func currentWord(input string, pos int) (int, int, string) {
 }
 
 func completeCandidates(prefix, dir string) []string {
+	pathCandidates := completePathCandidates(prefix, dir)
+	execCandidates := []string{}
+	if len(pathCandidates) == 0 && !strings.Contains(prefix, "/") {
+		execCandidates = completeExecCandidates(prefix)
+	}
 	candidates := make(map[string]struct{})
-	for _, c := range completePathCandidates(prefix, dir) {
+	for _, c := range pathCandidates {
 		candidates[c] = struct{}{}
 	}
-	if !strings.Contains(prefix, "/") {
-		for _, c := range completeExecCandidates(prefix) {
-			candidates[c] = struct{}{}
-		}
+	for _, c := range execCandidates {
+		candidates[c] = struct{}{}
 	}
 
 	var out []string
@@ -430,6 +433,9 @@ func completeExecCandidates(prefix string) []string {
 		for _, entry := range entries {
 			name := entry.Name()
 			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			if strings.Contains(name, "/") {
 				continue
 			}
 			if _, ok := seen[name]; ok {
