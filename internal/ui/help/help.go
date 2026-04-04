@@ -98,6 +98,7 @@ func (m Model) buildEntries() []entry {
 		{"Quick search", fmtKeys(k.QuickSearch)},
 		{"Theme picker", fmtKeys(k.ThemePicker)},
 		{"Run command", fmtKeys(k.CmdExec)},
+		{"Terminal", fmtKeys(k.Terminal)},
 		{"Help", fmtKeys(k.Help)},
 		{"Quit", fmtKeys(k.Quit)},
 	}

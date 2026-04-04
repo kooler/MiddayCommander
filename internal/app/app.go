@@ -100,10 +100,10 @@ func New() Model {
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
 
-	left := panel.New(lfs, cwd, panelKM)
+	left := panel.New(lfs, cwd, panelKM, cfg)
 	left.SetActive(true)
 
-	right := panel.New(lfs, home, panelKM)
+	right := panel.New(lfs, home, panelKM, cfg)
 
 	th := theme.Default()
 	if cfg.Theme != "" {
@@ -252,6 +252,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// File action messages from panel (configurable behavior)
 	case panel.OpenFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.EnterAction)
+
+	case panel.ExecuteFileMsg:
+		return m, executeFileCmd(msg.Path, m.activePanel().Path())
 
 	case panel.PreviewFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.SpaceAction)
@@ -436,6 +439,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keyMap.CmdExec):
 			return m.startCmdExec()
+		case key.Matches(msg, m.keyMap.Terminal):
+			return m, startTerminalCmd(m.activePanel().Path())
 		}
 
 		// Delegate to active panel
@@ -524,6 +529,8 @@ func (m Model) dispatchKey(raw string) (tea.Model, tea.Cmd) {
 		return m.startThemePicker()
 	case contains(cfg.CmdExec, raw):
 		return m.startCmdExec()
+	case contains(cfg.Terminal, raw):
+		return m, startTerminalCmd(m.activePanel().Path())
 	}
 	return m, nil
 }

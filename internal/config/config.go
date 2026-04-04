@@ -20,7 +20,7 @@ type Config struct {
 
 // BehaviorConfig controls configurable behaviors.
 type BehaviorConfig struct {
-	// What Enter does on a file: "edit" (default) or "preview"
+	// What Enter does on a file: "edit" (default), "preview", or "execute"
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
@@ -58,12 +58,13 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo       StringOrList `toml:"goto"`
-	FuzzyFind  StringOrList `toml:"fuzzy_find"`
-	Bookmarks  StringOrList `toml:"bookmarks"`
+	GoTo        StringOrList `toml:"goto"`
+	FuzzyFind   StringOrList `toml:"fuzzy_find"`
+	Bookmarks   StringOrList `toml:"bookmarks"`
 	Help        StringOrList `toml:"help"`
 	ThemePicker StringOrList `toml:"theme_picker"`
 	CmdExec     StringOrList `toml:"cmd_exec"`
+	Terminal    StringOrList `toml:"terminal"`
 }
 
 // StringOrList can unmarshal from either a single string or a list of strings.
@@ -125,13 +126,12 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:      StringOrList{"ctrl+g"},
-		FuzzyFind: StringOrList{"f9", "ctrl+p"},
-		Bookmarks: StringOrList{"f2", "ctrl+b"},
+		GoTo:        StringOrList{"ctrl+g"},
+		FuzzyFind:   StringOrList{"f9", "ctrl+p"},
+		Bookmarks:   StringOrList{"f2", "ctrl+b"},
 		Help:        StringOrList{"f1"},
 		ThemePicker: StringOrList{"ctrl+t"},
-		CmdExec:     StringOrList{"ctrl+r"},
-	}
+		CmdExec:     StringOrList{"ctrl+r"}, Terminal: StringOrList{"ctrl+o"}}
 }
 
 // Load reads config from ~/.config/mdc/config.toml, merging with defaults.
@@ -194,6 +194,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Help, src.Help)
 	mergeKey(&dst.ThemePicker, src.ThemePicker)
 	mergeKey(&dst.CmdExec, src.CmdExec)
+	mergeKey(&dst.Terminal, src.Terminal)
 }
 
 func mergeKey(dst *StringOrList, src StringOrList) {
@@ -250,6 +251,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.Help)
 	normalizeSlice(&kb.ThemePicker)
 	normalizeSlice(&kb.CmdExec)
+	normalizeSlice(&kb.Terminal)
 }
 
 // SaveTheme writes the theme name to the config file, preserving other settings.

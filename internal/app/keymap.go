@@ -24,6 +24,7 @@ type KeyMap struct {
 	Help        key.Binding
 	ThemePicker key.Binding
 	CmdExec     key.Binding
+	Terminal    key.Binding
 }
 
 // KeyMapFromConfig builds the global keymap from config.
@@ -45,6 +46,7 @@ func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 		Help:        binding(keys.Help, "help"),
 		ThemePicker: binding(keys.ThemePicker, "themes"),
 		CmdExec:     binding(keys.CmdExec, "run cmd"),
+		Terminal:    binding(keys.Terminal, "terminal"),
 	}
 }
 
