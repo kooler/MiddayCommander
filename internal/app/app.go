@@ -99,11 +99,12 @@ func New() Model {
 	lfs := local.New(string(filepath.Separator))
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
+	iconResolver := panel.NewIconResolver(cfg.Icons)
 
-	left := panel.New(lfs, cwd, panelKM)
+	left := panel.New(lfs, cwd, panelKM, iconResolver)
 	left.SetActive(true)
 
-	right := panel.New(lfs, home, panelKM)
+	right := panel.New(lfs, home, panelKM, iconResolver)
 
 	th := theme.Default()
 	if cfg.Theme != "" {

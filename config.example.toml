@@ -46,3 +46,30 @@ select_down   = "shift+down"
 
 # Search
 quick_search  = "ctrl+s"
+
+# ─── Nerd Font Icons ─────────────────────────
+# Display Nerd Font icons next to file/folder names in the panel.
+# Requires a Nerd Font installed in your terminal (e.g. Meslo Nerd Font,
+# JetBrains Mono Nerd Font, FiraCode Nerd Font).
+[icons]
+# Set to true to enable icons (default: false).
+enabled = false
+# Icon for directories (default: nf-fa-folder).
+folder = ""
+# Default icon for files without a matching extension (default: nf-fa-file).
+file = ""
+
+# Extension → icon mapping. Only a few examples shown; add any you need.
+[icons.extensions]
+txt  = ""   # nf-fa-file_text
+pdf  = ""   # nf-fa-file_pdf
+png  = ""   # nf-fa-file_image
+jpg  = ""
+jpeg = ""
+go   = ""   
+py   = ""  
+js   = ""   
+ts   = ""   # nf-seti-typescript
+zip  = ""   # nf-fa-file_archive
+tar  = ""
+gz   = ""

@@ -26,6 +26,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Live theme picker** - browse and preview themes with Ctrl-T
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
 - **Quick search** - start typing to jump to matching files instantly
+- **Nerd Font icons** - file type icons with per-extension customization
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
 - **Mouse support** - clickable menu bar and panel interaction
 - **Go to path** - quickly jump to any directory with `~` expansion
@@ -235,6 +236,68 @@ fkey_label_bg = "blue"
 ```
 
 Colors can be hex values (`"#89b4fa"`), ANSI color numbers (`"4"`), or palette references (`"blue"`). Any missing values fall back to the built-in default theme.
+
+## Nerd Font Icons
+
+Display Nerd Font icons next to file and folder names in the panel for a more visual file browsing experience.
+
+### Prerequisites
+
+You need a [Nerd Font](https://www.nerdfonts.com/) installed and set as your terminal font. Popular choices:
+
+- **Meslo Nerd Font** — monospaced, great for file managers
+- **JetBrains Mono Nerd Font** — developer-focused
+- **FiraCode Nerd Font** — clean and readable
+
+### Enabling Icons
+
+Icons are **disabled by default**. Set `enabled = true` in your config:
+
+```toml
+[icons]
+enabled = true
+```
+
+### Icon Configuration
+
+```toml
+[icons]
+enabled = true
+folder = ""   # Icon for directories (default: nf-fa-folder)
+file   = ""   # Default icon for files (default: nf-fa-file)
+
+[icons.extensions]
+txt  = ""   # nf-fa-file_text
+pdf  = ""   # nf-fa-file_pdf
+png  = ""   # nf-fa-file_image
+jpg  = ""
+go   = ""
+py   = ""   
+js   = ""   
+ts   = ""   # nf-seti-typescript
+zip  = ""   # nf-fa-file_archive
+```
+
+### Icon Resolution Behavior
+
+1. **Directories** — always use the `folder` icon, regardless of extension config.
+2. **Files with matching extension** — look up the extension (case-insensitive) in `[icons.extensions]`.
+3. **Files without a match** — fall back to the `file` icon.
+4. **Files without an extension** (e.g. `Makefile`) — also fall back to the `file` icon.
+
+### Built-in Defaults
+
+The icon system ships with defaults for 50+ file extensions, so icons work immediately when enabled without any config needed. Defaults cover:
+
+- **Documents** — txt, md, pdf, doc, docx, xls, xlsx
+- **Images** — png, jpg, jpeg, gif, svg, ico, bmp, webp
+- **Archives** — zip, tar, gz, bz2, 7z, rar, xz
+- **Code** — go, py, js, jsx, ts, tsx, rs, rb, java, c, cpp, h, hpp, cs, php, sh, bash
+- **Config/Markup** — json, yaml, yml, toml, xml, html, css
+- **Media** — mp3, wav, mp4, avi, mkv
+- **Go** — mod, sum
+
+You only need to add entries to `[icons.extensions]` if you want to override the defaults or add custom extensions.
 
 ## Contributing
 
