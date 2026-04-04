@@ -1,12 +1,12 @@
 package panel
 
 import (
-	"io/fs"
 	"sort"
 	"strings"
+
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
 )
 
-// SortMode determines how directory entries are sorted.
 type SortMode int
 
 const (
@@ -16,20 +16,16 @@ const (
 	SortByExtension
 )
 
-// SortEntries sorts directory entries. Directories always come first.
-func SortEntries(entries []fs.DirEntry, mode SortMode) {
+func SortEntries(entries []midfs.Entry, mode SortMode) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
-
-		// ".." always first
-		if a.Name() == ".." {
+		if a.Name == ".." {
 			return true
 		}
-		if b.Name() == ".." {
+		if b.Name == ".." {
 			return false
 		}
 
-		// Directories before files
 		aDir := a.IsDir()
 		bDir := b.IsDir()
 		if aDir != bDir {
@@ -38,39 +34,32 @@ func SortEntries(entries []fs.DirEntry, mode SortMode) {
 
 		switch mode {
 		case SortBySize:
-			ai, _ := a.Info()
-			bi, _ := b.Info()
-			if ai != nil && bi != nil {
-				return ai.Size() < bi.Size()
+			if a.Size != b.Size {
+				return a.Size < b.Size
 			}
-			return a.Name() < b.Name()
-
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		case SortByTime:
-			ai, _ := a.Info()
-			bi, _ := b.Info()
-			if ai != nil && bi != nil {
-				return ai.ModTime().After(bi.ModTime())
+			if !a.ModTime.Equal(b.ModTime) {
+				return a.ModTime.After(b.ModTime)
 			}
-			return a.Name() < b.Name()
-
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		case SortByExtension:
-			aExt := extensionOf(a.Name())
-			bExt := extensionOf(b.Name())
+			aExt := extensionOf(a.Name)
+			bExt := extensionOf(b.Name)
 			if aExt != bExt {
 				return aExt < bExt
 			}
-			return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
-
-		default: // SortByName
-			return strings.ToLower(a.Name()) < strings.ToLower(b.Name())
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		default:
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
 		}
 	})
 }
 
 func extensionOf(name string) string {
-	for i := len(name) - 1; i >= 0; i-- {
-		if name[i] == '.' {
-			return strings.ToLower(name[i:])
+	for index := len(name) - 1; index >= 0; index-- {
+		if name[index] == '.' {
+			return strings.ToLower(name[index:])
 		}
 	}
 	return ""

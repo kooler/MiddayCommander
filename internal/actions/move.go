@@ -1,41 +1,55 @@
 package actions
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
 )
 
-// Move moves sources to destDir. Tries os.Rename first (fast, same device),
-// falls back to copy+delete for cross-device moves.
-func Move(sources []string, destDir string, progressFn func(Progress)) error {
-	for _, src := range sources {
-		destPath := filepath.Join(destDir, filepath.Base(src))
+func Move(ctx context.Context, router *midfs.Router, sources []midfs.URI, destDir midfs.URI, progressFn func(Progress)) error {
+	for _, source := range sources {
+		entry, err := router.Stat(ctx, source)
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", source.String(), err)
+		}
 
-		// Try rename first (instant if same filesystem)
-		err := os.Rename(src, destPath)
-		if err == nil {
-			if progressFn != nil {
-				progressFn(Progress{Op: OpMove, Current: filepath.Base(src), DoneFiles: 1, TotalFiles: 1})
+		dest := router.Join(destDir, entry.Name)
+		sourceFS, _, err := router.Resolve(source)
+		if err != nil {
+			return err
+		}
+		destFS, _, err := router.Resolve(dest)
+		if err != nil {
+			return err
+		}
+
+		if sourceFS.ID() == destFS.ID() && midfs.HasCapability(sourceFS, midfs.CapRename) {
+			err := router.Rename(ctx, source, dest)
+			if err == nil {
+				if progressFn != nil {
+					progressFn(Progress{Op: OpMove, Current: entry.Name, DoneFiles: 1, TotalFiles: 1})
+				}
+				continue
 			}
-			continue
+		}
+		if !midfs.HasCapability(sourceFS, midfs.CapRemove) {
+			return midfs.CapabilityError(source, midfs.CapRemove)
 		}
 
-		// Cross-device: copy then delete
-		if err := Copy([]string{src}, destDir, progressFn); err != nil {
-			return fmt.Errorf("move (copy phase) %s: %w", src, err)
+		if err := Copy(ctx, router, []midfs.URI{source}, destDir, progressFn); err != nil {
+			return fmt.Errorf("move (copy phase) %s: %w", source.String(), err)
 		}
-		if err := os.RemoveAll(src); err != nil {
-			return fmt.Errorf("move (delete phase) %s: %w", src, err)
+		if err := router.Remove(ctx, source, true); err != nil {
+			return fmt.Errorf("move (delete phase) %s: %w", source.String(), err)
 		}
 	}
 
 	return nil
 }
 
-// Rename renames a single file or directory.
-func Rename(oldPath, newName string) error {
-	dir := filepath.Dir(oldPath)
-	newPath := filepath.Join(dir, newName)
-	return os.Rename(oldPath, newPath)
+func Rename(ctx context.Context, router *midfs.Router, oldURI midfs.URI, newName string) error {
+	parent := router.Parent(oldURI)
+	newURI := router.Join(parent, newName)
+	return router.Rename(ctx, oldURI, newURI)
 }

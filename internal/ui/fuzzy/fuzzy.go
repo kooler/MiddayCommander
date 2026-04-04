@@ -10,13 +10,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
 
 // ResultMsg is sent when the user selects a result.
 type ResultMsg struct {
-	Path string // full path of the selected file/directory
+	URI midfs.URI
 }
 
 // DismissMsg is sent when the user cancels the fuzzy finder.
@@ -35,6 +36,7 @@ type Model struct {
 	matches   []match      // filtered + scored results
 	cursor    int          // selected result index
 	offset    int          // scroll offset
+	rootURI   midfs.URI
 	rootDir   string       // directory being searched
 	walking   bool         // true while background walker is running
 	width     int
@@ -47,10 +49,11 @@ type match struct {
 	matchIdxs  []int // character indices that matched in the display name
 }
 
-// New creates a new fuzzy finder searching from rootDir.
-func New(rootDir string, width, height int) Model {
+// New creates a new fuzzy finder searching from rootURI.
+func New(rootURI midfs.URI, width, height int) Model {
 	return Model{
-		rootDir: rootDir,
+		rootURI: rootURI,
+		rootDir: rootURI.Path,
 		walking: true,
 		width:   width,
 		height:  height,
@@ -80,8 +83,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, func() tea.Msg { return DismissMsg{} }
 		case "enter":
 			if m.cursor >= 0 && m.cursor < len(m.matches) {
-				path := m.matches[m.cursor].path
-				return m, func() tea.Msg { return ResultMsg{Path: path} }
+				uri := midfs.NewFileURI(m.matches[m.cursor].path)
+				return m, func() tea.Msg { return ResultMsg{URI: uri} }
 			}
 			return m, func() tea.Msg { return DismissMsg{} }
 		case "up", "ctrl+p":

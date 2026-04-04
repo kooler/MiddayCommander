@@ -1,130 +1,146 @@
 package actions
 
 import (
+	"context"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
+
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
 )
 
-// Copy recursively copies sources to destDir, reporting progress via progressFn.
-func Copy(sources []string, destDir string, progressFn func(Progress)) error {
-	totalFiles, totalBytes := countFilesAndBytes(sources)
-	p := Progress{
+func Copy(ctx context.Context, router *midfs.Router, sources []midfs.URI, destDir midfs.URI, progressFn func(Progress)) error {
+	totalFiles, totalBytes, err := countFilesAndBytes(ctx, router, sources)
+	if err != nil {
+		return err
+	}
+
+	progress := Progress{
 		Op:         OpCopy,
 		TotalFiles: totalFiles,
 		TotalBytes: totalBytes,
 	}
 
-	for _, src := range sources {
-		info, err := os.Lstat(src)
+	for _, source := range sources {
+		entry, err := router.Stat(ctx, source)
 		if err != nil {
-			return fmt.Errorf("stat %s: %w", src, err)
+			return fmt.Errorf("stat %s: %w", source.String(), err)
 		}
-
-		destPath := filepath.Join(destDir, filepath.Base(src))
-
-		if info.IsDir() {
-			if err := copyDir(src, destPath, &p, progressFn); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFile(src, destPath, info, &p, progressFn); err != nil {
-				return err
-			}
+		dest := router.Join(destDir, entry.Name)
+		if err := copyEntry(ctx, router, entry, dest, &progress, progressFn); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func copyFile(src, dst string, info fs.FileInfo, p *Progress, progressFn func(Progress)) error {
-	p.Current = filepath.Base(src)
+func copyEntry(ctx context.Context, router *midfs.Router, source midfs.Entry, dest midfs.URI, progress *Progress, progressFn func(Progress)) error {
+	if source.IsDir() {
+		return copyDir(ctx, router, source, dest, progress, progressFn)
+	}
+	return copyFile(ctx, router, source, dest, progress, progressFn)
+}
+
+func copyFile(ctx context.Context, router *midfs.Router, source midfs.Entry, dest midfs.URI, progress *Progress, progressFn func(Progress)) error {
+	progress.Current = source.Name
 	if progressFn != nil {
-		progressFn(*p)
+		progressFn(*progress)
 	}
 
-	srcFile, err := os.Open(src)
+	reader, err := router.OpenReader(ctx, source.URI, midfs.OpenReadOptions{})
 	if err != nil {
-		return fmt.Errorf("open %s: %w", src, err)
+		return fmt.Errorf("open %s: %w", source.URI.String(), err)
 	}
-	defer srcFile.Close()
+	defer reader.Close()
 
-	dstFile, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+	writer, err := router.OpenWriter(ctx, dest, midfs.OpenWriteOptions{
+		Overwrite: true,
+		Perm:      source.Mode.Perm(),
+	})
 	if err != nil {
-		return fmt.Errorf("create %s: %w", dst, err)
+		return fmt.Errorf("open %s: %w", dest.String(), err)
 	}
-	defer dstFile.Close()
 
-	written, err := io.Copy(dstFile, srcFile)
+	written, err := io.Copy(writer, reader)
+	closeErr := writer.Close()
+	if err == nil {
+		err = closeErr
+	}
 	if err != nil {
-		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
+		return fmt.Errorf("copy %s -> %s: %w", source.URI.String(), dest.String(), err)
 	}
 
-	p.DoneBytes += written
-	p.DoneFiles++
+	progress.DoneBytes += written
+	progress.DoneFiles++
 	if progressFn != nil {
-		progressFn(*p)
+		progressFn(*progress)
 	}
-
 	return nil
 }
 
-func copyDir(src, dst string, p *Progress, progressFn func(Progress)) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
+func copyDir(ctx context.Context, router *midfs.Router, source midfs.Entry, dest midfs.URI, progress *Progress, progressFn func(Progress)) error {
+	if err := ensureDir(ctx, router, dest, source.Mode.Perm()); err != nil {
 		return err
 	}
 
-	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dst, err)
-	}
-
-	entries, err := os.ReadDir(src)
+	children, err := router.List(ctx, source.URI)
 	if err != nil {
-		return fmt.Errorf("readdir %s: %w", src, err)
+		return fmt.Errorf("list %s: %w", source.URI.String(), err)
 	}
-
-	for _, entry := range entries {
-		srcPath := filepath.Join(src, entry.Name())
-		dstPath := filepath.Join(dst, entry.Name())
-
-		info, err := entry.Info()
-		if err != nil {
+	for _, child := range children {
+		target := router.Join(dest, child.Name)
+		if err := copyEntry(ctx, router, child, target, progress, progressFn); err != nil {
 			return err
 		}
-
-		if entry.IsDir() {
-			if err := copyDir(srcPath, dstPath, p, progressFn); err != nil {
-				return err
-			}
-		} else {
-			if err := copyFile(srcPath, dstPath, info, p, progressFn); err != nil {
-				return err
-			}
-		}
 	}
-
 	return nil
 }
 
-func countFilesAndBytes(paths []string) (int, int64) {
-	var files int
-	var bytes int64
+func ensureDir(ctx context.Context, router *midfs.Router, dir midfs.URI, perm os.FileMode) error {
+	entry, err := router.Stat(ctx, dir)
+	if err == nil {
+		if entry.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("%s already exists and is not a directory", dir.String())
+	}
+	return router.Mkdir(ctx, dir, perm)
+}
 
-	for _, path := range paths {
-		_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+func countFilesAndBytes(ctx context.Context, router *midfs.Router, paths []midfs.URI) (int, int64, error) {
+	var totalFiles int
+	var totalBytes int64
+
+	var walk func(uri midfs.URI) error
+	walk = func(uri midfs.URI) error {
+		entry, err := router.Stat(ctx, uri)
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() {
+			totalFiles++
+			totalBytes += entry.Size
+			return nil
+		}
+
+		children, err := router.List(ctx, uri)
+		if err != nil {
+			return err
+		}
+		for _, child := range children {
+			if err := walk(child.URI); err != nil {
 				return err
 			}
-			files++
-			if info, err := d.Info(); err == nil {
-				bytes += info.Size()
-			}
-			return nil
-		})
+		}
+		return nil
 	}
 
-	return files, bytes
+	for _, uri := range paths {
+		if err := walk(uri); err != nil {
+			return 0, 0, err
+		}
+	}
+
+	return totalFiles, totalBytes, nil
 }

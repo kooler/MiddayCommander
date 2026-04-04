@@ -1,30 +1,28 @@
 package actions
 
 import (
-	"os"
-	"path/filepath"
+	"context"
+
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
 )
 
-// Delete removes all specified paths.
-func Delete(paths []string, progressFn func(Progress)) error {
-	p := Progress{
+func Delete(ctx context.Context, router *midfs.Router, paths []midfs.URI, progressFn func(Progress)) error {
+	progress := Progress{
 		Op:         OpDelete,
 		TotalFiles: len(paths),
 	}
 
-	for _, path := range paths {
-		p.Current = filepath.Base(path)
+	for _, uri := range paths {
+		progress.Current = midfs.Base(uri)
 		if progressFn != nil {
-			progressFn(p)
+			progressFn(progress)
 		}
-
-		if err := os.RemoveAll(path); err != nil {
+		if err := router.Remove(ctx, uri, true); err != nil {
 			return err
 		}
-
-		p.DoneFiles++
+		progress.DoneFiles++
 		if progressFn != nil {
-			progressFn(p)
+			progressFn(progress)
 		}
 	}
 

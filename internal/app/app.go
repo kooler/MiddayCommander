@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,11 +12,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/kooler/MiddayCommander/internal/bookmark"
+	bookmarkstore "github.com/kooler/MiddayCommander/internal/bookmarks"
 	"github.com/kooler/MiddayCommander/internal/config"
-	"github.com/kooler/MiddayCommander/internal/ui/bookmarks"
+	midfs "github.com/kooler/MiddayCommander/internal/fs"
+	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
+	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
+	"github.com/kooler/MiddayCommander/internal/tui/dialogs"
 	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
-	"github.com/kooler/MiddayCommander/internal/ui/dialog"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
 	"github.com/kooler/MiddayCommander/internal/ui/help"
 	"github.com/kooler/MiddayCommander/internal/ui/menubar"
@@ -23,7 +26,6 @@ import (
 	"github.com/kooler/MiddayCommander/internal/ui/panel"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 	"github.com/kooler/MiddayCommander/internal/ui/themepicker"
-	"github.com/kooler/MiddayCommander/internal/vfs/local"
 )
 
 // FocusTarget tracks which panel has focus.
@@ -46,6 +48,7 @@ const (
 
 // Model is the root application model.
 type Model struct {
+	router     *midfs.Router
 	leftPanel  panel.Model
 	rightPanel panel.Model
 	focus      FocusTarget
@@ -57,9 +60,9 @@ type Model struct {
 	height     int
 
 	// Overlays
-	dialog      *dialog.Model
+	dialog      *dialogs.Model
 	fuzzy       *fuzzy.Model
-	bookmarks   *bookmarks.Model
+	bookmarks   *dialogs.BookmarksModel
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
@@ -68,11 +71,11 @@ type Model struct {
 	themeBeforePick theme.Theme
 
 	// Bookmark store
-	bookmarkStore *bookmark.Store
+	bookmarkStore *bookmarkstore.Store
 
 	// Pending operation state (saved while dialog is open)
-	pendingSources []string
-	pendingDest    string
+	pendingSources []midfs.URI
+	pendingDest    midfs.URI
 
 	// Double-Esc to quit
 	lastEsc time.Time
@@ -96,14 +99,14 @@ func New() Model {
 		cwd = home
 	}
 
-	lfs := local.New(string(filepath.Separator))
+	router := midfs.NewRouter(localfs.New(), archivefs.New())
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
 
-	left := panel.New(lfs, cwd, panelKM)
+	left := panel.New(router, midfs.NewFileURI(cwd), panelKM)
 	left.SetActive(true)
 
-	right := panel.New(lfs, home, panelKM)
+	right := panel.New(router, midfs.NewFileURI(home), panelKM)
 
 	th := theme.Default()
 	if cfg.Theme != "" {
@@ -113,6 +116,7 @@ func New() Model {
 	}
 
 	return Model{
+		router:         router,
 		leftPanel:      left,
 		rightPanel:     right,
 		focus:          FocusLeft,
@@ -121,7 +125,7 @@ func New() Model {
 		cfg:            cfg,
 		menuItems:      menubar.DefaultItems(cfg),
 		shiftMenuItems: menubar.ShiftItems(cfg),
-		bookmarkStore:  bookmark.LoadStore(),
+		bookmarkStore:  bookmarkstore.LoadStore(),
 	}
 }
 
@@ -199,12 +203,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// Bookmark messages
-	case bookmarks.SelectMsg:
+	case dialogs.BookmarkSelectMsg:
 		m.bookmarks = nil
-		m.activePanel().SetPath(msg.Path)
+		m.activePanel().SetURI(msg.URI)
 		return m, m.activePanel().LoadDir()
 
-	case bookmarks.DismissMsg:
+	case dialogs.BookmarkDismissMsg:
 		m.bookmarks = nil
 		return m, nil
 
@@ -220,15 +224,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Fuzzy finder result messages
 	case fuzzy.ResultMsg:
 		m.fuzzy = nil
-		// Navigate to the selected path
-		info, err := os.Stat(msg.Path)
+		entry, err := m.router.Stat(context.Background(), msg.URI)
 		if err != nil {
 			return m, nil
 		}
-		if info.IsDir() {
-			m.activePanel().SetPath(msg.Path)
+		if entry.IsDir() {
+			m.activePanel().SetURI(msg.URI)
 		} else {
-			m.activePanel().SetPath(filepath.Dir(msg.Path))
+			m.activePanel().SetURI(m.router.Parent(msg.URI))
 		}
 		return m, m.activePanel().LoadDir()
 
@@ -251,10 +254,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// File action messages from panel (configurable behavior)
 	case panel.OpenFileMsg:
-		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.EnterAction)
+		return m, m.fileActionCmd(msg.URI, m.cfg.Behavior.EnterAction)
 
 	case panel.PreviewFileMsg:
-		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.SpaceAction)
+		return m, m.fileActionCmd(msg.URI, m.cfg.Behavior.SpaceAction)
 
 	// File operation results
 	case copyDoneMsg:
@@ -291,9 +294,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.activePanel().LoadDir()
 
 	case externalDoneMsg:
+		if msg.err != nil {
+			return m.showError("External Command Error", msg.err)
+		}
 		return m, m.refreshBothPanels()
 
-	case dialog.Result:
+	case dialogs.Result:
 		return m.handleDialogResult(msg)
 
 	case ShiftPressMsg:
@@ -547,14 +553,19 @@ func contains(keys config.StringOrList, val string) bool {
 }
 
 // fileActionCmd maps a configurable action name to the appropriate command.
-func (m *Model) fileActionCmd(path string, action string) tea.Cmd {
+func (m *Model) fileActionCmd(uri midfs.URI, action string) tea.Cmd {
+	if uri.Scheme != midfs.SchemeFile {
+		return func() tea.Msg {
+			return externalDoneMsg{err: fmt.Errorf("external open is only available for local files")}
+		}
+	}
 	switch action {
 	case "edit":
-		return editFileCmd(path)
+		return editFileCmd(uri)
 	case "preview":
-		return viewFileCmd(path)
+		return viewFileCmd(uri)
 	default:
-		return editFileCmd(path)
+		return editFileCmd(uri)
 	}
 }
 
@@ -569,8 +580,8 @@ func (m Model) startCopy() (tea.Model, tea.Cmd) {
 	m.pendingSources = sources
 	m.pendingDest = dest
 
-	msg := fmt.Sprintf("Copy %d item(s) to %s?", len(sources), dest)
-	d := dialog.NewConfirm("Copy", msg, tagCopy)
+	msg := fmt.Sprintf("Copy %d item(s) to %s?", len(sources), dest.Display())
+	d := dialogs.NewConfirm("Copy", msg, tagCopy)
 	m.dialog = &d
 	return m, nil
 }
@@ -584,8 +595,8 @@ func (m Model) startMove() (tea.Model, tea.Cmd) {
 	m.pendingSources = sources
 	m.pendingDest = dest
 
-	msg := fmt.Sprintf("Move %d item(s) to %s?", len(sources), dest)
-	d := dialog.NewConfirm("Move", msg, tagMove)
+	msg := fmt.Sprintf("Move %d item(s) to %s?", len(sources), dest.Display())
+	d := dialogs.NewConfirm("Move", msg, tagMove)
 	m.dialog = &d
 	return m, nil
 }
@@ -598,13 +609,13 @@ func (m Model) startDelete() (tea.Model, tea.Cmd) {
 	m.pendingSources = sources
 
 	msg := fmt.Sprintf("Delete %d item(s)?", len(sources))
-	d := dialog.NewConfirm("Delete", msg, tagDelete)
+	d := dialogs.NewConfirm("Delete", msg, tagDelete)
 	m.dialog = &d
 	return m, nil
 }
 
 func (m Model) startMkdir() (tea.Model, tea.Cmd) {
-	d := dialog.NewInput("Create Directory", "Directory name:", "", tagMkdir)
+	d := dialogs.NewInput("Create Directory", "Directory name:", "", tagMkdir)
 	m.dialog = &d
 	return m, nil
 }
@@ -614,13 +625,17 @@ func (m Model) startRename() (tea.Model, tea.Cmd) {
 	if name == "" || name == ".." {
 		return m, nil
 	}
-	d := dialog.NewInput("Rename", "New name:", name, tagRename)
+	d := dialogs.NewInput("Rename", "New name:", name, tagRename)
 	m.dialog = &d
 	return m, nil
 }
 
 func (m Model) startGoTo() (tea.Model, tea.Cmd) {
-	d := dialog.NewInput("Go To", "Path:", m.activePanel().Path(), tagGoTo)
+	defaultValue := m.activePanel().URI().String()
+	if localPath, ok := m.activePanelLocalPath(); ok {
+		defaultValue = localPath
+	}
+	d := dialogs.NewInput("Go To", "Path:", defaultValue, tagGoTo)
 	m.dialog = &d
 	return m, nil
 }
@@ -632,7 +647,7 @@ func (m Model) startHelp() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startBookmarks() (tea.Model, tea.Cmd) {
-	bm := bookmarks.New(m.bookmarkStore, m.activePanel().Path(), m.width, m.height)
+	bm := dialogs.NewBookmarks(m.bookmarkStore, m.activePanel().URI(), m.width, m.height)
 	m.bookmarks = &bm
 	return m, nil
 }
@@ -654,13 +669,21 @@ func (m Model) startThemePicker() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startCmdExec() (tea.Model, tea.Cmd) {
-	ce := cmdexec.New(m.activePanel().Path(), m.width, m.height)
+	path, ok := m.activePanelLocalPath()
+	if !ok {
+		return m.showError("Command Error", fmt.Errorf("command execution is only available in local directories"))
+	}
+	ce := cmdexec.New(path, m.width, m.height)
 	m.cmdExec = &ce
 	return m, nil
 }
 
 func (m Model) startFuzzyFind() (tea.Model, tea.Cmd) {
-	f := fuzzy.New(m.activePanel().Path(), m.width, m.height)
+	path, ok := m.activePanelLocalPath()
+	if !ok {
+		return m.showError("Find Error", fmt.Errorf("fuzzy find is only available in local directories"))
+	}
+	f := fuzzy.New(midfs.NewFileURI(path), m.width, m.height)
 	m.fuzzy = &f
 	return m, f.Init()
 }
@@ -670,7 +693,7 @@ func (m Model) startView() (tea.Model, tea.Cmd) {
 	if e == nil || e.IsDir() {
 		return m, nil
 	}
-	return m, viewFileCmd(m.currentFilePath())
+	return m, m.fileActionCmd(m.currentFileURI(), "preview")
 }
 
 func (m Model) startEdit() (tea.Model, tea.Cmd) {
@@ -678,47 +701,44 @@ func (m Model) startEdit() (tea.Model, tea.Cmd) {
 	if e == nil || e.IsDir() {
 		return m, nil
 	}
-	return m, editFileCmd(m.currentFilePath())
+	return m, m.fileActionCmd(m.currentFileURI(), "edit")
 }
 
 func (m Model) showError(title string, err error) (tea.Model, tea.Cmd) {
-	d := dialog.NewError(title, err.Error())
+	d := dialogs.NewError(title, err.Error())
 	m.dialog = &d
 	return m, nil
 }
 
-func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
+func (m Model) handleDialogResult(result dialogs.Result) (tea.Model, tea.Cmd) {
 	switch result.Tag {
 	case tagCopy:
 		if result.Confirmed {
-			return m, copyCmd(m.pendingSources, m.pendingDest)
+			return m, copyCmd(m.router, m.pendingSources, m.pendingDest)
 		}
 	case tagMove:
 		if result.Confirmed {
-			return m, moveCmd(m.pendingSources, m.pendingDest)
+			return m, moveCmd(m.router, m.pendingSources, m.pendingDest)
 		}
 	case tagDelete:
 		if result.Confirmed {
-			return m, deleteCmd(m.pendingSources)
+			return m, deleteCmd(m.router, m.pendingSources)
 		}
 	case tagMkdir:
 		if result.Confirmed && result.Text != "" {
-			return m, mkdirCmd(m.activePanelMkdir(result.Text))
+			return m, mkdirCmd(m.router, m.activePanelMkdir(result.Text))
 		}
 	case tagRename:
 		if result.Confirmed && result.Text != "" {
-			return m, renameCmd(m.currentFilePath(), result.Text)
+			return m, renameCmd(m.router, m.currentFileURI(), result.Text)
 		}
 	case tagGoTo:
 		if result.Confirmed && result.Text != "" {
-			path := result.Text
-			// Expand ~ to home directory
-			if len(path) > 0 && path[0] == '~' {
-				if home, err := os.UserHomeDir(); err == nil {
-					path = home + path[1:]
-				}
+			uri, err := parseGoToURI(result.Text)
+			if err != nil {
+				return m.showError("Go To Error", err)
 			}
-			m.activePanel().SetPath(path)
+			m.activePanel().SetURI(uri)
 			return m, m.activePanel().LoadDir()
 		}
 	}
