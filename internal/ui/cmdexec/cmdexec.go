@@ -384,6 +384,9 @@ func completeCandidates(prefix, dir string) []string {
 
 func completePathCandidates(prefix, dir string) []string {
 	rawDir, base := filepath.Split(prefix)
+	if base == "" {
+		return nil
+	}
 	if rawDir == "" {
 		rawDir = "."
 	}
