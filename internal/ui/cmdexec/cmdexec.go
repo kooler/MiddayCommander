@@ -3,8 +3,12 @@ package cmdexec
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,6 +35,7 @@ type Model struct {
 	outputOffset int
 	running      bool
 	dir          string
+	suggestions  []string
 	width        int
 	height       int
 }
@@ -92,14 +97,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.output = ""
 			m.outputLines = nil
 			m.outputOffset = 0
+			m.suggestions = nil
 			return m, runCommandCmd(m.dir, m.input)
 		}
+
+	case "tab":
+		return m.completeCurrentWord(), nil
 
 	case "backspace":
 		if m.inputPos > 0 {
 			m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 			m.inputPos--
 		}
+		m.suggestions = nil
 
 	case "delete":
 		if m.inputPos < len(m.input) {
@@ -110,17 +120,21 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.inputPos > 0 {
 			m.inputPos--
 		}
+		m.suggestions = nil
 
 	case "right":
 		if m.inputPos < len(m.input) {
 			m.inputPos++
 		}
+		m.suggestions = nil
 
 	case "home":
 		m.inputPos = 0
+		m.suggestions = nil
 
 	case "end":
 		m.inputPos = len(m.input)
+		m.suggestions = nil
 
 	case "up":
 		if m.outputOffset > 0 {
@@ -157,6 +171,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if len(s) == 1 && s[0] >= 32 {
 			m.input = m.input[:m.inputPos] + s + m.input[m.inputPos:]
 			m.inputPos++
+			m.suggestions = nil
 		}
 	}
 
@@ -261,6 +276,8 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			}
 			contentLines = append(contentLines, rendered)
 		}
+	} else if len(m.suggestions) > 0 {
+		contentLines = append(contentLines, dimStyle.Render(truncOrPad(" Suggestions: "+strings.Join(m.suggestions, ", "), innerW)))
 	} else {
 		hint := dimStyle.Render(" Type a command and press Enter")
 		hintWidth := lipgloss.Width(hint)
@@ -301,4 +318,157 @@ func runCommandCmd(dir, command string) tea.Cmd {
 		err := cmd.Run()
 		return CommandDoneMsg{Output: buf.String(), Err: err}
 	}
+}
+
+func (m Model) completeCurrentWord() Model {
+	start, end, prefix := currentWord(m.input, m.inputPos)
+	if prefix == "" {
+		return m
+	}
+
+	candidates := completeCandidates(prefix, m.dir)
+	m.suggestions = candidates
+	if len(candidates) == 0 {
+		return m
+	}
+
+	common := commonPrefix(candidates)
+	if len(common) > len(prefix) {
+		m.input = m.input[:start] + common + m.input[end:]
+		m.inputPos = start + len(common)
+	}
+
+	if len(candidates) == 1 {
+		m.input = m.input[:start] + candidates[0] + m.input[end:]
+		m.inputPos = start + len(candidates[0])
+	}
+
+	return m
+}
+
+func currentWord(input string, pos int) (int, int, string) {
+	if pos > len(input) {
+		pos = len(input)
+	}
+	start := strings.LastIndexFunc(input[:pos], unicode.IsSpace)
+	if start == -1 {
+		start = 0
+	} else {
+		start++
+	}
+	end := pos
+	for end < len(input) && !unicode.IsSpace(rune(input[end])) {
+		end++
+	}
+	return start, end, input[start:end]
+}
+
+func completeCandidates(prefix, dir string) []string {
+	candidates := make(map[string]struct{})
+	for _, c := range completePathCandidates(prefix, dir) {
+		candidates[c] = struct{}{}
+	}
+	if !strings.Contains(prefix, "/") {
+		for _, c := range completeExecCandidates(prefix) {
+			candidates[c] = struct{}{}
+		}
+	}
+
+	var out []string
+	for c := range candidates {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func completePathCandidates(prefix, dir string) []string {
+	rawDir, base := filepath.Split(prefix)
+	if rawDir == "" {
+		rawDir = "."
+	}
+	scanDir := rawDir
+	if !filepath.IsAbs(rawDir) {
+		scanDir = filepath.Join(dir, rawDir)
+	}
+	entries, err := os.ReadDir(scanDir)
+	if err != nil {
+		return nil
+	}
+
+	var candidates []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), base) {
+			candidate := filepath.Join(rawDir, entry.Name())
+			if rawDir == "." {
+				candidate = entry.Name()
+			}
+			if entry.IsDir() {
+				candidate += string(os.PathSeparator)
+			}
+			candidates = append(candidates, candidate)
+		}
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func completeExecCandidates(prefix string) []string {
+	pathEnv := os.Getenv("PATH")
+	paths := filepath.SplitList(pathEnv)
+	seen := make(map[string]struct{})
+	var candidates []string
+
+	for _, p := range paths {
+		entries, err := os.ReadDir(p)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if !strings.HasPrefix(name, prefix) {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			path := filepath.Join(p, name)
+			info, err := os.Stat(path)
+			if err != nil {
+				continue
+			}
+			if info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+				seen[name] = struct{}{}
+				candidates = append(candidates, name)
+			}
+		}
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func commonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for !strings.HasPrefix(s, prefix) {
+			if prefix == "" {
+				return ""
+			}
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
+}
+
+func truncOrPad(s string, width int) string {
+	if lipgloss.Width(s) > width {
+		if width > 3 {
+			return s[:width-3] + "..."
+		}
+		return s[:width]
+	}
+	return s + strings.Repeat(" ", width-lipgloss.Width(s))
 }
