@@ -231,7 +231,7 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	// Input line with cursor
 	var inputDisplay string
 	if m.inputPos < len(m.input) {
-		inputDisplay = m.input[:m.inputPos] + "█" + m.input[m.inputPos+1:]
+		inputDisplay = m.input[:m.inputPos] + "█" + m.input[m.inputPos:]
 	} else {
 		inputDisplay = m.input + "█"
 	}
