@@ -387,9 +387,6 @@ func completeCandidates(prefix, dir string) []string {
 
 func completePathCandidates(prefix, dir string) []string {
 	rawDir, base := filepath.Split(prefix)
-	if base == "" {
-		return nil
-	}
 	if rawDir == "" {
 		rawDir = "."
 	}
@@ -404,16 +401,17 @@ func completePathCandidates(prefix, dir string) []string {
 
 	var candidates []string
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), base) {
-			candidate := filepath.Join(rawDir, entry.Name())
-			if rawDir == "." {
-				candidate = entry.Name()
-			}
-			if entry.IsDir() {
-				candidate += string(os.PathSeparator)
-			}
-			candidates = append(candidates, candidate)
+		if base != "" && !strings.HasPrefix(entry.Name(), base) {
+			continue
 		}
+		candidate := filepath.Join(rawDir, entry.Name())
+		if rawDir == "." {
+			candidate = entry.Name()
+		}
+		if entry.IsDir() {
+			candidate += string(os.PathSeparator)
+		}
+		candidates = append(candidates, candidate)
 	}
 	sort.Strings(candidates)
 	return candidates
