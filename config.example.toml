@@ -46,3 +46,7 @@ select_down   = "shift+down"
 
 # Search
 quick_search  = "ctrl+s"
+
+# Dialogs
+goto          = "ctrl+g"
+cmd_exec      = "ctrl+r"

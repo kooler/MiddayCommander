@@ -1,6 +1,9 @@
 package dialog
 
 import (
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,8 +39,10 @@ type Model struct {
 	tag     string // passed back in Result
 
 	// Input dialog
-	input    string
-	inputPos int
+	input       string
+	inputPos    int
+	basePath    string
+	suggestions []string
 
 	// Progress dialog
 	progress float64
@@ -63,6 +68,10 @@ func NewConfirm(title, message, tag string) Model {
 
 // NewInput creates a text input dialog.
 func NewInput(title, message, defaultValue, tag string) Model {
+	return NewInputWithBase(title, message, defaultValue, tag, "")
+}
+
+func NewInputWithBase(title, message, defaultValue, tag, basePath string) Model {
 	return Model{
 		kind:     KindInput,
 		title:    title,
@@ -70,8 +79,145 @@ func NewInput(title, message, defaultValue, tag string) Model {
 		tag:      tag,
 		input:    defaultValue,
 		inputPos: len(defaultValue),
+		basePath: basePath,
 		width:    50,
 	}
+}
+
+func expandTilde(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+func completeDialogPathCandidates(prefix, dir string) []string {
+	if prefix == "~" {
+		return []string{"~/"}
+	}
+
+	rawDir, base := filepath.Split(prefix)
+	if rawDir == "" {
+		rawDir = "."
+	}
+
+	expandedRawDir := rawDir
+	if strings.Contains(rawDir, "~") {
+		expandedRawDir = expandTilde(rawDir)
+	}
+
+	scanDir := expandedRawDir
+	if !filepath.IsAbs(expandedRawDir) && expandedRawDir != "." {
+		scanDir = filepath.Join(dir, expandedRawDir)
+	}
+
+	entries, err := os.ReadDir(scanDir)
+	if err != nil {
+		return nil
+	}
+
+	var candidates []string
+	for _, entry := range entries {
+		// Only show directories for GoTo dialog
+		if !entry.IsDir() {
+			continue
+		}
+		if base != "" && !strings.HasPrefix(entry.Name(), base) {
+			continue
+		}
+		candidate := filepath.Join(rawDir, entry.Name())
+		if rawDir == "." {
+			candidate = entry.Name()
+		}
+		candidate += string(os.PathSeparator)
+		candidates = append(candidates, candidate)
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func commonPrefix(strs []string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	prefix := strs[0]
+	for _, s := range strs[1:] {
+		for !strings.HasPrefix(s, prefix) {
+			if prefix == "" {
+				return ""
+			}
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+	return prefix
+}
+
+func formatDialogSuggestions(suggestions []string, width, maxLines int) []string {
+	if len(suggestions) == 0 {
+		return nil
+	}
+
+	var lines []string
+	currentLine := " "
+	currentWidth := 1
+
+	// Spacing between suggestions
+	itemSpacing := 2
+
+	for i, sug := range suggestions {
+		// Display basename for readability
+		displayName := filepath.Base(strings.TrimRight(sug, "/"))
+		sugWidth := lipgloss.Width(displayName)
+		neededWidth := sugWidth + itemSpacing
+		if i == 0 {
+			neededWidth = sugWidth + 1
+		}
+
+		// If adding this suggestion would exceed width, start a new line
+		if currentWidth+neededWidth > width {
+			// Pad the current line to width
+			if lipgloss.Width(currentLine) < width {
+				currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
+			}
+			lines = append(lines, currentLine)
+			if len(lines) >= maxLines {
+				break
+			}
+			currentLine = " "
+			currentWidth = 1
+		}
+
+		if len(currentLine) > 1 {
+			currentLine += "  "
+			currentWidth += 2
+		}
+		currentLine += displayName
+		currentWidth += sugWidth
+
+		if len(lines) >= maxLines {
+			break
+		}
+	}
+
+	// Add the last line if there's content
+	if len(currentLine) > 1 && len(lines) < maxLines {
+		if lipgloss.Width(currentLine) < width {
+			currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
+		}
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }
 
 // NewError creates an error display dialog.
@@ -146,34 +292,70 @@ func (m *Model) updateInput(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		m.done = true
 		m.result = Result{Kind: KindInput, Confirmed: false, Tag: m.tag}
+	case "tab":
+		if m.tag == "goto" {
+			m.completeGoToPath()
+		}
 	case "backspace":
 		if m.inputPos > 0 {
 			m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 			m.inputPos--
 		}
+		m.updateSuggestions()
 	case "delete":
 		if m.inputPos < len(m.input) {
 			m.input = m.input[:m.inputPos] + m.input[m.inputPos+1:]
 		}
+		m.updateSuggestions()
 	case "left":
 		if m.inputPos > 0 {
 			m.inputPos--
 		}
+		m.updateSuggestions()
 	case "right":
 		if m.inputPos < len(m.input) {
 			m.inputPos++
 		}
+		m.updateSuggestions()
 	case "home":
 		m.inputPos = 0
+		m.updateSuggestions()
 	case "end":
 		m.inputPos = len(m.input)
+		m.updateSuggestions()
 	default:
 		if len(msg.String()) == 1 && msg.String()[0] >= 32 {
 			m.input = m.input[:m.inputPos] + msg.String() + m.input[m.inputPos:]
 			m.inputPos++
+			m.updateSuggestions()
 		}
 	}
 	return nil
+}
+
+func (m *Model) updateSuggestions() {
+	if m.tag != "goto" {
+		m.suggestions = nil
+		return
+	}
+	m.suggestions = completeDialogPathCandidates(m.input, m.basePath)
+}
+
+func (m *Model) completeGoToPath() {
+	candidates := completeDialogPathCandidates(m.input, m.basePath)
+	m.suggestions = candidates
+	if len(candidates) == 0 {
+		return
+	}
+	common := commonPrefix(candidates)
+	if len(common) > len(m.input) {
+		m.input = common
+	}
+	if len(candidates) == 1 {
+		m.input = candidates[0]
+	}
+	m.inputPos = len(m.input)
+	m.updateSuggestions()
 }
 
 func (m *Model) updateError(msg tea.KeyMsg) tea.Cmd {
@@ -202,6 +384,11 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	var msgLines int
 	if m.kind == KindInput {
 		msgLines = 1 // label + input on one line
+		if len(m.suggestions) > 0 && m.tag == "goto" {
+			// For GoTo, format suggestions compactly (multiple per line)
+			formatted := formatDialogSuggestions(m.suggestions, innerW-2, 6)
+			msgLines += len(formatted)
+		}
 	} else {
 		msgLines = len(wrapText(m.message, innerW-2))
 	}
@@ -292,6 +479,15 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		}
 		contentLines = append(contentLines, line)
 
+		if m.kind == KindInput && len(m.suggestions) > 0 && m.tag == "goto" {
+			// Format suggestions compactly (multiple per line) like Ctrl+R
+			formatted := formatDialogSuggestions(m.suggestions, innerW-2, 6)
+			for _, suggLine := range formatted {
+				sugLine := padOrTrim(suggLine, innerW-1)
+				contentLines = append(contentLines, bgStyle.Render(" "+sugLine))
+			}
+		}
+
 	default:
 		// Message on its own line(s) for non-input dialogs
 		for _, msgLine := range wrapText(m.message, innerW-2) {
@@ -358,6 +554,16 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
+}
+
+func padOrTrim(s string, width int) string {
+	if lipgloss.Width(s) > width {
+		if width > 3 {
+			return s[:width-3] + "..."
+		}
+		return s[:width]
+	}
+	return s + strings.Repeat(" ", width-lipgloss.Width(s))
 }
 
 func wrapText(text string, width int) []string {

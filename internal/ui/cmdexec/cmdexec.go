@@ -36,6 +36,7 @@ type Model struct {
 	running      bool
 	dir          string
 	suggestions  []string
+	execOnly     bool
 	width        int
 	height       int
 }
@@ -104,37 +105,42 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "tab":
 		return m.completeCurrentWord(), nil
 
+	case "ctrl+g":
+		m.execOnly = true
+		return m.updateSuggestions(), nil
+
 	case "backspace":
 		if m.inputPos > 0 {
 			m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 			m.inputPos--
 		}
-		m.suggestions = nil
+		m = m.updateSuggestions()
 
 	case "delete":
 		if m.inputPos < len(m.input) {
 			m.input = m.input[:m.inputPos] + m.input[m.inputPos+1:]
 		}
+		m = m.updateSuggestions()
 
 	case "left":
 		if m.inputPos > 0 {
 			m.inputPos--
 		}
-		m.suggestions = nil
+		m = m.updateSuggestions()
 
 	case "right":
 		if m.inputPos < len(m.input) {
 			m.inputPos++
 		}
-		m.suggestions = nil
+		m = m.updateSuggestions()
 
 	case "home":
 		m.inputPos = 0
-		m.suggestions = nil
+		m = m.updateSuggestions()
 
 	case "end":
 		m.inputPos = len(m.input)
-		m.suggestions = nil
+		m = m.updateSuggestions()
 
 	case "up":
 		if m.outputOffset > 0 {
@@ -169,9 +175,14 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	default:
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 {
+			if m.inputPos < 0 {
+				m.inputPos = 0
+			} else if m.inputPos > len(m.input) {
+				m.inputPos = len(m.input)
+			}
 			m.input = m.input[:m.inputPos] + s + m.input[m.inputPos:]
 			m.inputPos++
-			m.suggestions = nil
+			m = m.updateSuggestions()
 		}
 	}
 
@@ -277,7 +288,14 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			contentLines = append(contentLines, rendered)
 		}
 	} else if len(m.suggestions) > 0 {
-		contentLines = append(contentLines, dimStyle.Render(truncOrPad(" Suggestions: "+strings.Join(m.suggestions, ", "), innerW)))
+		oh := boxH - 6
+		if oh < 1 {
+			oh = 1
+		}
+		suggestionLines := formatSuggestions(m.suggestions, innerW, oh)
+		for _, line := range suggestionLines {
+			contentLines = append(contentLines, dimStyle.Render(line))
+		}
 	} else {
 		hint := dimStyle.Render(" Type a command and press Enter")
 		hintWidth := lipgloss.Width(hint)
@@ -326,24 +344,63 @@ func (m Model) completeCurrentWord() Model {
 		return m
 	}
 
-	candidates := completeCandidates(prefix, m.dir)
+	candidates := completeCandidates(prefix, m.dir, m.execOnly)
 	m.suggestions = candidates
 	if len(candidates) == 0 {
 		return m
 	}
 
+	didComplete := false
 	common := commonPrefix(candidates)
 	if len(common) > len(prefix) {
-		m.input = m.input[:start] + common + m.input[end:]
-		m.inputPos = start + len(common) - (end - m.inputPos)
+		m.input = m.input[:start] + mergeCompletion(common, m.input[end:])
+		m.inputPos = clamp(start+len(common)-(end-m.inputPos), len(m.input))
+		didComplete = true
 	}
 
 	if len(candidates) == 1 {
-		m.input = m.input[:start] + candidates[0] + m.input[end:]
-		m.inputPos = start + len(candidates[0]) - (end - m.inputPos)
+		m.input = m.input[:start] + mergeCompletion(candidates[0], m.input[end:])
+		m.inputPos = clamp(start+len(candidates[0])-(end-m.inputPos), len(m.input))
+		didComplete = true
 	}
 
+	if didComplete {
+		m.suggestions = nil
+	}
 	return m
+}
+
+func clamp(pos, length int) int {
+	if pos < 0 {
+		return 0
+	}
+	if pos > length {
+		return length
+	}
+	return pos
+}
+
+func (m Model) updateSuggestions() Model {
+	_, _, prefix := currentWord(m.input, m.inputPos)
+	if prefix == "" {
+		if m.execOnly {
+			m.suggestions = completeCandidates(prefix, m.dir, m.execOnly)
+		} else {
+			m.suggestions = nil
+		}
+		return m
+	}
+	m.suggestions = completeCandidates(prefix, m.dir, m.execOnly)
+	return m
+}
+
+func mergeCompletion(candidate, suffix string) string {
+	for i := len(candidate); i > 0; i-- {
+		if strings.HasPrefix(suffix, candidate[len(candidate)-i:]) {
+			return candidate + suffix[i:]
+		}
+	}
+	return candidate + suffix
 }
 
 func currentWord(input string, pos int) (int, int, string) {
@@ -363,7 +420,11 @@ func currentWord(input string, pos int) (int, int, string) {
 	return start, end, input[start:end]
 }
 
-func completeCandidates(prefix, dir string) []string {
+func completeCandidates(prefix, dir string, execOnly bool) []string {
+	if execOnly {
+		return completeExecCandidates(prefix)
+	}
+
 	pathCandidates := completePathCandidates(prefix, dir)
 	execCandidates := []string{}
 	if len(pathCandidates) == 0 && !strings.Contains(prefix, "/") {
@@ -385,14 +446,42 @@ func completeCandidates(prefix, dir string) []string {
 	return out
 }
 
+func expandTilde(path string) string {
+	if !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return path
+	}
+	if path == "~" {
+		return home
+	}
+	if strings.HasPrefix(path, "~/") {
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
 func completePathCandidates(prefix, dir string) []string {
+	if prefix == "~" {
+		return []string{"~/"}
+	}
+
 	rawDir, base := filepath.Split(prefix)
 	if rawDir == "" {
 		rawDir = "."
 	}
-	scanDir := rawDir
-	if !filepath.IsAbs(rawDir) {
-		scanDir = filepath.Join(dir, rawDir)
+
+	// Expand ~ in both rawDir and display
+	expandedRawDir := rawDir
+	if strings.Contains(rawDir, "~") {
+		expandedRawDir = expandTilde(rawDir)
+	}
+
+	scanDir := expandedRawDir
+	if !filepath.IsAbs(expandedRawDir) && expandedRawDir != "." {
+		scanDir = filepath.Join(dir, expandedRawDir)
 	}
 	entries, err := os.ReadDir(scanDir)
 	if err != nil {
@@ -478,4 +567,63 @@ func truncOrPad(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-lipgloss.Width(s))
+}
+
+func formatSuggestions(suggestions []string, width, maxLines int) []string {
+	if len(suggestions) == 0 {
+		return nil
+	}
+
+	var lines []string
+	currentLine := " "
+	currentWidth := 1
+
+	// Estimate padding needed (2 spaces between items)
+	itemSpacing := 2
+
+	for i, sug := range suggestions {
+		// Display basename for readability, but use full path for completion
+		displayName := filepath.Base(strings.TrimRight(sug, "/"))
+		sugWidth := lipgloss.Width(displayName)
+		neededWidth := sugWidth + itemSpacing
+		if i == 0 {
+			neededWidth = sugWidth + 1 // Just space after first item
+		}
+
+		// If adding this suggestion would exceed width, start a new line
+		if currentWidth+neededWidth > width {
+			// Pad the current line to width
+			if lipgloss.Width(currentLine) < width {
+				currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
+			}
+			lines = append(lines, currentLine)
+			if len(lines) >= maxLines {
+				break
+			}
+			currentLine = " "
+			currentWidth = 1
+		}
+
+		if len(currentLine) > 1 {
+			currentLine += "  "
+			currentWidth += 2
+		}
+		currentLine += displayName
+		currentWidth += sugWidth
+
+		if len(lines) >= maxLines {
+			// Truncate current suggestion if we're at max lines
+			break
+		}
+	}
+
+	// Add the last line if there's content and we haven't hit max lines
+	if len(lines) < maxLines && currentWidth > 1 {
+		if lipgloss.Width(currentLine) < width {
+			currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
+		}
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }
