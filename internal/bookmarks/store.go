@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/kooler/MiddayCommander/internal/config"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 )
 
@@ -177,12 +178,9 @@ func frecency(bookmark Bookmark, now time.Time) float64 {
 }
 
 func storePath() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "mdc", "bookmarks.json")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
+	path := config.BookmarksPath()
+	if path == "" {
 		return "bookmarks.json"
 	}
-	return filepath.Join(home, ".config", "mdc", "bookmarks.json")
+	return path
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/kooler/MiddayCommander/internal/config"
 )
 
 // ThemeFile is the TOML structure for a theme file.
@@ -56,10 +57,10 @@ type sectionTOML struct {
 }
 
 type menuTOML struct {
-	FG         string `toml:"fg"`
-	BG         string `toml:"bg"`
-	FKeyHintFG string `toml:"fkey_hint_fg"`
-	FKeyHintBG string `toml:"fkey_hint_bg"`
+	FG          string `toml:"fg"`
+	BG          string `toml:"bg"`
+	FKeyHintFG  string `toml:"fkey_hint_fg"`
+	FKeyHintBG  string `toml:"fkey_hint_bg"`
 	FKeyLabelFG string `toml:"fkey_label_fg"`
 	FKeyLabelBG string `toml:"fkey_label_bg"`
 }
@@ -112,7 +113,7 @@ func ListAvailable() []AvailableTheme {
 		Theme:  Default(),
 	}}
 
-	themesDir := filepath.Join(configDirPath(), "themes")
+	themesDir := config.ThemesDir()
 	entries, err := os.ReadDir(themesDir)
 	if err != nil {
 		return result
@@ -164,25 +165,13 @@ func ParseTOML(key string, data []byte) (AvailableTheme, error) {
 
 // ThemesDir returns the path to ~/.config/mdc/themes/.
 func ThemesDir() string {
-	return filepath.Join(configDirPath(), "themes")
+	return config.ThemesDir()
 }
 
 // LoadByName loads a theme by name from ~/.config/mdc/themes/<name>.toml.
 func LoadByName(name string) (Theme, error) {
-	path := filepath.Join(configDirPath(), "themes", name+".toml")
+	path := filepath.Join(config.ThemesDir(), name+".toml")
 	return LoadFromFile(path)
-}
-
-// configDirPath returns ~/.config/mdc, respecting XDG_CONFIG_HOME.
-func configDirPath() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "mdc")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "mdc")
 }
 
 func buildTheme(tf ThemeFile) Theme {

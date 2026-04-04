@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -58,9 +57,9 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo       StringOrList `toml:"goto"`
-	FuzzyFind  StringOrList `toml:"fuzzy_find"`
-	Bookmarks  StringOrList `toml:"bookmarks"`
+	GoTo        StringOrList `toml:"goto"`
+	FuzzyFind   StringOrList `toml:"fuzzy_find"`
+	Bookmarks   StringOrList `toml:"bookmarks"`
 	Help        StringOrList `toml:"help"`
 	ThemePicker StringOrList `toml:"theme_picker"`
 	CmdExec     StringOrList `toml:"cmd_exec"`
@@ -125,9 +124,9 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:      StringOrList{"ctrl+g"},
-		FuzzyFind: StringOrList{"f9", "ctrl+p"},
-		Bookmarks: StringOrList{"f2", "ctrl+b"},
+		GoTo:        StringOrList{"ctrl+g"},
+		FuzzyFind:   StringOrList{"f9", "ctrl+p"},
+		Bookmarks:   StringOrList{"f2", "ctrl+b"},
 		Help:        StringOrList{"f1"},
 		ThemePicker: StringOrList{"ctrl+t"},
 		CmdExec:     StringOrList{"ctrl+r"},
@@ -138,8 +137,7 @@ func DefaultKeyBindings() KeyBindings {
 func Load() Config {
 	cfg := Default()
 
-	configPath := filepath.Join(configDirPath(), "config.toml")
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
 		return cfg
 	}
@@ -255,8 +253,8 @@ func normalizeAllKeys(kb *KeyBindings) {
 // SaveTheme writes the theme name to the config file, preserving other settings.
 // An empty name means "use built-in default" and clears the theme setting.
 func SaveTheme(name string) error {
-	dir := configDirPath()
-	configPath := filepath.Join(dir, "config.toml")
+	dir := ConfigDir()
+	configPath := ConfigPath()
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -285,21 +283,4 @@ func SaveTheme(name string) error {
 	}
 
 	return os.WriteFile(configPath, []byte(content), 0o644)
-}
-
-// ConfigDir returns the mdc config directory path.
-func ConfigDir() string {
-	return configDirPath()
-}
-
-// configDirPath returns ~/.config/mdc, respecting XDG_CONFIG_HOME.
-func configDirPath() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return filepath.Join(xdg, "mdc")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "mdc")
 }
