@@ -195,11 +195,113 @@ func TestProfileSelectMsgLoadsActivePanel(t *testing.T) {
 	}
 }
 
+func TestConnectSubmitMsgLoadsActivePanel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("loopback sftp tests rely on unix-flavored filesystem paths")
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("hello remote"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	identityFile := writePrivateKeyForAppTest(t)
+	clientPublicKey := readPublicKeyForAppTest(t, identityFile)
+	addr, knownHostsPath, cleanup := startGoToTestSFTPServer(t, clientPublicKey)
+	defer cleanup()
+
+	host, port, err := splitPortForAppTest(addr)
+	if err != nil {
+		t.Fatalf("splitPortForAppTest() error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	model := Model{
+		router:     router,
+		leftPanel:  panel.New(router, midfs.NewFileURI(root), panel.KeyMap{}),
+		rightPanel: panel.New(router, midfs.NewFileURI(root), panel.KeyMap{}),
+		focus:      FocusLeft,
+	}
+	model.leftPanel.SetActive(true)
+
+	msgModel, cmd := model.Update(dialogs.ConnectSubmitMsg{
+		Profile: profiles.Profile{
+			Name: "manual",
+			Host: host,
+			Port: port,
+			User: "tester",
+			Path: root,
+			Auth: profiles.AuthKey,
+		},
+		URI: midfs.URI{
+			Scheme: midfs.SchemeSFTP,
+			Host:   host,
+			Port:   port,
+			User:   "tester",
+			Path:   root,
+			Query: map[string]string{
+				sftpfs.QueryAuth:           profiles.AuthKey,
+				sftpfs.QueryIdentityFile:   identityFile,
+				sftpfs.QueryKnownHostsFile: knownHostsPath,
+			},
+		},
+	})
+
+	updated := msgModel.(Model)
+	loadMsg, ok := cmd().(panel.DirLoadedMsg)
+	if !ok {
+		t.Fatalf("Update(ConnectSubmitMsg) msg = %T, want panel.DirLoadedMsg", cmd())
+	}
+	if loadMsg.Err != nil {
+		t.Fatalf("loadMsg.Err = %v", loadMsg.Err)
+	}
+
+	updated.leftPanel.HandleDirLoaded(loadMsg)
+	updated.leftPanel.RestoreCursor("hello.txt")
+	entry := updated.leftPanel.CurrentEntry()
+	if entry == nil || entry.URI.Scheme != midfs.SchemeSFTP {
+		t.Fatalf("CurrentEntry() = %#v, want sftp entry", entry)
+	}
+}
+
+func TestStartProfilesFallsBackToManualConnectWhenNoProfiles(t *testing.T) {
+	model := Model{
+		profileStore: &profiles.Store{},
+	}
+
+	updatedModel, cmd := model.startProfiles()
+	if cmd != nil {
+		t.Fatalf("startProfiles() cmd = %v, want nil", cmd)
+	}
+
+	updated := updatedModel.(Model)
+	if updated.connect == nil {
+		t.Fatal("startProfiles() did not open manual connect for an empty profile store")
+	}
+}
+
 func TestDispatchKeyRemoteConnectOpensProfilesOverlay(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profiles.toml")
+	if err := os.WriteFile(path, []byte(`
+[[profiles]]
+name = "alpha"
+host = "alpha.example.test"
+user = "alice"
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(profiles.toml) error = %v", err)
+	}
+
+	store, err := profiles.LoadPath(path)
+	if err != nil {
+		t.Fatalf("LoadPath() error = %v", err)
+	}
+
 	model := Model{
 		cfg:          config.Default(),
 		keyMap:       KeyMapFromConfig(config.Default().Keys),
-		profileStore: &profiles.Store{},
+		profileStore: store,
 	}
 
 	updatedModel, cmd := model.dispatchKey("ctrl+k")

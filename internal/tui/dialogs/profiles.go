@@ -105,6 +105,8 @@ func (m ProfilesModel) Update(msg tea.KeyMsg) (ProfilesModel, tea.Cmd) {
 	case "f":
 		m.filtering = true
 		m.filter = ""
+	case "n":
+		return m, func() tea.Msg { return ConnectOpenMsg{} }
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		index := int(msg.String()[0] - '0')
 		if index < len(m.items) {
@@ -239,6 +241,8 @@ func (m ProfilesModel) View(th theme.Theme, screenWidth, screenHeight int) strin
 
 	keyStyle := lipgloss.NewStyle().Background(bg).Foreground(accent).Bold(true)
 	footer := keyStyle.Render("f") + dimStyle.Render(":Filter") +
+		dimStyle.Render("  ") +
+		keyStyle.Render("n") + dimStyle.Render(":Manual") +
 		dimStyle.Render("  ") +
 		keyStyle.Render("0-9") + dimStyle.Render(":Jump") +
 		dimStyle.Render("  ") +

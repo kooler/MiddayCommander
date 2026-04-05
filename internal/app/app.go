@@ -67,6 +67,7 @@ type Model struct {
 	fuzzy       *fuzzy.Model
 	bookmarks   *dialogs.BookmarksModel
 	profiles    *dialogs.ProfilesModel
+	connect     *dialogs.ConnectModel
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
@@ -242,6 +243,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.profiles = nil
 		return m, nil
 
+	case dialogs.ConnectOpenMsg:
+		m.profiles = nil
+		return m.startConnect()
+
+	case dialogs.ConnectSubmitMsg:
+		m.connect = nil
+		m.activePanel().SetURI(msg.URI)
+		return m, m.activePanel().LoadDir()
+
+	case dialogs.ConnectDismissMsg:
+		m.connect = nil
+		return m, nil
+
 	// Fuzzy finder internal messages — route to fuzzy model
 	case fuzzy.FileWalkMsg:
 		if m.fuzzy != nil {
@@ -384,6 +398,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.connect != nil {
+			newConnect, cmd := m.connect.Update(msg)
+			m.connect = &newConnect
+			return m, cmd
+		}
+
 		// Theme picker gets priority when active
 		if m.themePicker != nil {
 			newTP, cmd := m.themePicker.Update(msg)
@@ -519,6 +539,10 @@ func (m Model) View() string {
 	} else if m.profiles != nil {
 		box := m.profiles.View(m.theme, m.width, m.height)
 		bw, bh := m.profiles.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.connect != nil {
+		box := m.connect.View(m.theme, m.width, m.height)
+		bw, bh := m.connect.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
 	} else if m.themePicker != nil {
 		box := m.themePicker.View(m.theme, m.width, m.height)
@@ -707,9 +731,18 @@ func (m Model) startProfiles() (tea.Model, tea.Cmd) {
 	if m.profilesErr != nil {
 		return m.showError("Profiles Error", m.profilesErr)
 	}
+	if m.profileStore == nil || len(m.profileStore.All()) == 0 {
+		return m.startConnect()
+	}
 
 	pm := dialogs.NewProfiles(m.profileStore, m.width, m.height)
 	m.profiles = &pm
+	return m, nil
+}
+
+func (m Model) startConnect() (tea.Model, tea.Cmd) {
+	cm := dialogs.NewConnect(m.activePanel().URI(), m.width, m.height)
+	m.connect = &cm
 	return m, nil
 }
 
