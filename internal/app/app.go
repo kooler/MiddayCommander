@@ -17,6 +17,7 @@ import (
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
+	sftpfs "github.com/kooler/MiddayCommander/internal/fs/sftp"
 	"github.com/kooler/MiddayCommander/internal/tui/dialogs"
 	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
@@ -99,7 +100,7 @@ func New() Model {
 		cwd = home
 	}
 
-	router := midfs.NewRouter(localfs.New(), archivefs.New())
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
 
@@ -127,6 +128,14 @@ func New() Model {
 		shiftMenuItems: menubar.ShiftItems(cfg),
 		bookmarkStore:  bookmarkstore.LoadStore(),
 	}
+}
+
+// Close releases any router-owned resources such as pooled remote connections.
+func (m Model) Close() error {
+	if m.router == nil {
+		return nil
+	}
+	return m.router.Close()
 }
 
 func panelKeyMapFromConfig(keys config.KeyBindings) panel.KeyMap {

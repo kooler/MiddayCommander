@@ -42,7 +42,11 @@ func main() {
 	defer cancel()
 	go pollShift(ctx, p)
 
-	if _, err := p.Run(); err != nil {
+	finalModel, err := p.Run()
+	if closer, ok := finalModel.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
