@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path"
 	"strings"
 
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
+	pkgsftp "github.com/pkg/sftp"
 )
 
 // FS exposes an SFTP-backed filesystem through the shared MiddayCommander
@@ -17,7 +19,7 @@ type FS struct {
 	pool *Pool
 }
 
-// New builds a read-only SFTP filesystem backed by its own connection pool.
+// New builds an SFTP filesystem backed by its own connection pool.
 func New() *FS {
 	return NewWithPool(nil)
 }
@@ -39,7 +41,7 @@ func (f *FS) Scheme() midfs.Scheme {
 }
 
 func (f *FS) Capabilities() uint64 {
-	return midfs.CapList | midfs.CapRead
+	return midfs.CapList | midfs.CapRead | midfs.CapWrite | midfs.CapMkdir | midfs.CapRename | midfs.CapRemove
 }
 
 func (f *FS) List(ctx context.Context, dir midfs.URI) ([]midfs.Entry, error) {
@@ -84,15 +86,35 @@ func (f *FS) Stat(ctx context.Context, uri midfs.URI) (midfs.Entry, error) {
 }
 
 func (f *FS) Mkdir(ctx context.Context, uri midfs.URI, perm os.FileMode) error {
-	return midfs.CapabilityError(f.Clean(uri), midfs.CapMkdir)
+	client, cleanURI, err := f.clientForURI(ctx, uri)
+	if err != nil {
+		return err
+	}
+	if err := client.SFTP().Mkdir(cleanURI.Path); err != nil {
+		return err
+	}
+	if perm != 0 {
+		if err := client.SFTP().Chmod(cleanURI.Path, perm); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (f *FS) Rename(ctx context.Context, from midfs.URI, to midfs.URI) error {
-	return midfs.CapabilityError(f.Clean(from), midfs.CapRename)
+	client, cleanFrom, cleanTo, err := f.renameClientAndPaths(ctx, from, to)
+	if err != nil {
+		return err
+	}
+	return client.SFTP().Rename(cleanFrom.Path, cleanTo.Path)
 }
 
 func (f *FS) Remove(ctx context.Context, uri midfs.URI, recursive bool) error {
-	return midfs.CapabilityError(f.Clean(uri), midfs.CapRemove)
+	client, cleanURI, err := f.clientForURI(ctx, uri)
+	if err != nil {
+		return err
+	}
+	return removePath(client.SFTP(), cleanURI.Path, recursive)
 }
 
 func (f *FS) OpenReader(ctx context.Context, uri midfs.URI, opts midfs.OpenReadOptions) (io.ReadCloser, error) {
@@ -117,7 +139,44 @@ func (f *FS) OpenReader(ctx context.Context, uri midfs.URI, opts midfs.OpenReadO
 }
 
 func (f *FS) OpenWriter(ctx context.Context, uri midfs.URI, opts midfs.OpenWriteOptions) (io.WriteCloser, error) {
-	return nil, midfs.CapabilityError(f.Clean(uri), midfs.CapWrite)
+	client, cleanURI, err := f.clientForURI(ctx, uri)
+	if err != nil {
+		return nil, err
+	}
+
+	perm := opts.Perm
+	if perm == 0 {
+		perm = 0o644
+	}
+
+	if opts.Atomic {
+		return openAtomicWriter(client.SFTP(), cleanURI.Path, opts, perm)
+	}
+
+	flags := os.O_CREATE | os.O_WRONLY
+	switch {
+	case opts.Offset > 0:
+	case opts.Overwrite:
+		flags |= os.O_TRUNC
+	default:
+		flags |= os.O_EXCL
+	}
+
+	file, err := client.SFTP().OpenFile(cleanURI.Path, flags)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.SFTP().Chmod(cleanURI.Path, perm); err != nil && !os.IsPermission(err) {
+		_ = file.Close()
+		return nil, err
+	}
+	if opts.Offset > 0 {
+		if _, err := file.Seek(opts.Offset, io.SeekStart); err != nil {
+			_ = file.Close()
+			return nil, err
+		}
+	}
+	return file, nil
 }
 
 func (f *FS) Join(base midfs.URI, elems ...string) midfs.URI {
@@ -200,6 +259,25 @@ func (f *FS) clientForURI(ctx context.Context, uri midfs.URI) (*Client, midfs.UR
 	return client, cleanURI, nil
 }
 
+func (f *FS) renameClientAndPaths(ctx context.Context, from midfs.URI, to midfs.URI) (*Client, midfs.URI, midfs.URI, error) {
+	cleanFrom := f.Clean(from)
+	cleanTo := f.Clean(to)
+
+	sameEndpoint, err := sameConnectionEndpoint(cleanFrom, cleanTo)
+	if err != nil {
+		return nil, midfs.URI{}, midfs.URI{}, err
+	}
+	if !sameEndpoint {
+		return nil, midfs.URI{}, midfs.URI{}, fmt.Errorf("rename across sftp endpoints is not supported")
+	}
+
+	client, _, err := f.clientForURI(ctx, cleanFrom)
+	if err != nil {
+		return nil, midfs.URI{}, midfs.URI{}, err
+	}
+	return client, cleanFrom, cleanTo, nil
+}
+
 func linkTarget(client *Client, path string, info os.FileInfo) (string, error) {
 	if client == nil || info == nil || info.Mode()&os.ModeSymlink == 0 {
 		return "", nil
@@ -238,4 +316,137 @@ func entryFromInfo(name string, uri midfs.URI, info os.FileInfo, target string) 
 	}
 }
 
-var _ midfs.FileSystem = (*FS)(nil)
+func sameConnectionEndpoint(from midfs.URI, to midfs.URI) (bool, error) {
+	fromOpts, err := FromURI(from)
+	if err != nil {
+		return false, err
+	}
+	toOpts, err := FromURI(to)
+	if err != nil {
+		return false, err
+	}
+
+	normalizedFrom, err := normalizeOptions(fromOpts)
+	if err != nil {
+		return false, err
+	}
+	normalizedTo, err := normalizeOptions(toOpts)
+	if err != nil {
+		return false, err
+	}
+
+	return connectionKey(normalizedFrom) == connectionKey(normalizedTo), nil
+}
+
+func removePath(client *pkgsftp.Client, target string, recursive bool) error {
+	info, err := client.Lstat(target)
+	if err != nil {
+		return err
+	}
+
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return client.Remove(target)
+	}
+	if !recursive {
+		return client.RemoveDirectory(target)
+	}
+
+	children, err := client.ReadDir(target)
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
+		childPath := path.Join(target, child.Name())
+		if err := removePath(client, childPath, true); err != nil {
+			return err
+		}
+	}
+	return client.RemoveDirectory(target)
+}
+
+func openAtomicWriter(client *pkgsftp.Client, target string, opts midfs.OpenWriteOptions, perm os.FileMode) (io.WriteCloser, error) {
+	tempPath := target + opts.TempExtension
+	if opts.TempExtension == "" {
+		tempPath = target + ".tmp"
+	}
+
+	file, err := client.OpenFile(tempPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Chmod(tempPath, perm); err != nil && !os.IsPermission(err) {
+		_ = file.Close()
+		_ = client.Remove(tempPath)
+		return nil, err
+	}
+	if opts.Offset > 0 {
+		if _, err := file.Seek(opts.Offset, io.SeekStart); err != nil {
+			_ = file.Close()
+			_ = client.Remove(tempPath)
+			return nil, err
+		}
+	}
+
+	return &atomicWriteCloser{
+		File:      file,
+		client:    client,
+		target:    target,
+		tempPath:  tempPath,
+		overwrite: opts.Overwrite,
+	}, nil
+}
+
+type atomicWriteCloser struct {
+	*pkgsftp.File
+	client    *pkgsftp.Client
+	target    string
+	tempPath  string
+	overwrite bool
+}
+
+func (w *atomicWriteCloser) Close() error {
+	if err := w.File.Close(); err != nil {
+		_ = w.client.Remove(w.tempPath)
+		return err
+	}
+
+	if !w.overwrite {
+		if _, err := w.client.Lstat(w.target); err == nil {
+			_ = w.client.Remove(w.tempPath)
+			return iofs.ErrExist
+		} else if err != nil && !os.IsNotExist(err) {
+			_ = w.client.Remove(w.tempPath)
+			return err
+		}
+		return w.client.Rename(w.tempPath, w.target)
+	}
+
+	if err := w.client.PosixRename(w.tempPath, w.target); err == nil {
+		return nil
+	}
+
+	if info, err := w.client.Lstat(w.target); err == nil {
+		if info.IsDir() {
+			_ = w.client.Remove(w.tempPath)
+			return fmt.Errorf("%s already exists and is a directory", w.target)
+		}
+		if err := w.client.Remove(w.target); err != nil {
+			_ = w.client.Remove(w.tempPath)
+			return err
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		_ = w.client.Remove(w.tempPath)
+		return err
+	}
+
+	if err := w.client.Rename(w.tempPath, w.target); err != nil {
+		_ = w.client.Remove(w.tempPath)
+		return err
+	}
+	return nil
+}
+
+var (
+	_ midfs.FileSystem = (*FS)(nil)
+	_ io.WriteCloser   = (*atomicWriteCloser)(nil)
+)

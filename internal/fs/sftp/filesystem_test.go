@@ -117,6 +117,144 @@ func TestFilesystemListStatAndOpenReader(t *testing.T) {
 	}
 }
 
+func TestFilesystemMutationsAndOpenWriter(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("loopback sftp tests rely on unix-flavored filesystem paths")
+	}
+
+	ctx := context.Background()
+	root := t.TempDir()
+	identityFile := writePrivateKey(t, false)
+	clientPublicKey := readPublicKey(t, identityFile)
+	addr, knownHostsPath, cleanup := startTestSFTPServer(t, clientPublicKey)
+	defer cleanup()
+
+	host, port, err := splitPort(addr)
+	if err != nil {
+		t.Fatalf("splitPort() error = %v", err)
+	}
+
+	fsys := sftpfs.New()
+	defer fsys.Close()
+
+	rootURI := midfs.URI{
+		Scheme: midfs.SchemeSFTP,
+		Host:   host,
+		Port:   port,
+		User:   "tester",
+		Path:   root,
+		Query: map[string]string{
+			sftpfs.QueryAuth:           profiles.AuthKey,
+			sftpfs.QueryIdentityFile:   identityFile,
+			sftpfs.QueryKnownHostsFile: knownHostsPath,
+		},
+	}
+
+	remoteDir := fsys.Join(rootURI, "uploads")
+	if err := fsys.Mkdir(ctx, remoteDir, 0o755); err != nil {
+		t.Fatalf("Mkdir() error = %v", err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "uploads")); err != nil || !info.IsDir() {
+		t.Fatalf("remote directory not created: info=%v err=%v", info, err)
+	}
+
+	fileURI := fsys.Join(remoteDir, "draft.txt")
+	writer, err := fsys.OpenWriter(ctx, fileURI, midfs.OpenWriteOptions{
+		Overwrite: false,
+		Perm:      0o640,
+	})
+	if err != nil {
+		t.Fatalf("OpenWriter(create) error = %v", err)
+	}
+	if _, err := io.WriteString(writer, "draft contents"); err != nil {
+		t.Fatalf("WriteString(create) error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close(create) error = %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, "uploads", "draft.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(created) error = %v", err)
+	}
+	if string(data) != "draft contents" {
+		t.Fatalf("created file contents = %q, want %q", string(data), "draft contents")
+	}
+
+	writer, err = fsys.OpenWriter(ctx, fileURI, midfs.OpenWriteOptions{
+		Atomic:    true,
+		Overwrite: true,
+		Perm:      0o600,
+	})
+	if err != nil {
+		t.Fatalf("OpenWriter(atomic overwrite) error = %v", err)
+	}
+	if _, err := io.WriteString(writer, "updated"); err != nil {
+		t.Fatalf("WriteString(atomic overwrite) error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close(atomic overwrite) error = %v", err)
+	}
+
+	data, err = os.ReadFile(filepath.Join(root, "uploads", "draft.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(updated) error = %v", err)
+	}
+	if string(data) != "updated" {
+		t.Fatalf("updated file contents = %q, want %q", string(data), "updated")
+	}
+
+	renamedURI := fsys.Join(remoteDir, "final.txt")
+	if err := fsys.Rename(ctx, fileURI, renamedURI); err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "uploads", "draft.txt")); !os.IsNotExist(err) {
+		t.Fatalf("old remote file still exists after rename: %v", err)
+	}
+	if data, err = os.ReadFile(filepath.Join(root, "uploads", "final.txt")); err != nil {
+		t.Fatalf("ReadFile(renamed) error = %v", err)
+	}
+	if string(data) != "updated" {
+		t.Fatalf("renamed file contents = %q, want %q", string(data), "updated")
+	}
+
+	if err := fsys.Remove(ctx, remoteDir, true); err != nil {
+		t.Fatalf("Remove(recursive) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "uploads")); !os.IsNotExist(err) {
+		t.Fatalf("remote directory still exists after recursive remove: %v", err)
+	}
+}
+
+func TestFilesystemRenameRejectsCrossEndpoint(t *testing.T) {
+	fsys := sftpfs.New()
+	defer fsys.Close()
+
+	from := midfs.URI{
+		Scheme: midfs.SchemeSFTP,
+		Host:   "files-1.example.test",
+		User:   "demo",
+		Path:   "/alpha.txt",
+		Query: map[string]string{
+			sftpfs.QueryAuth: "agent",
+		},
+	}
+	to := midfs.URI{
+		Scheme: midfs.SchemeSFTP,
+		Host:   "files-2.example.test",
+		User:   "demo",
+		Path:   "/beta.txt",
+		Query: map[string]string{
+			sftpfs.QueryAuth: "agent",
+		},
+	}
+
+	err := fsys.Rename(context.Background(), from, to)
+	if err == nil || !strings.Contains(err.Error(), "across sftp endpoints") {
+		t.Fatalf("Rename() error = %v, want cross-endpoint failure", err)
+	}
+}
+
 func TestFilesystemPathHelpersAndClose(t *testing.T) {
 	fsys := sftpfs.New()
 
