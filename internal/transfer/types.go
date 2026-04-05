@@ -36,6 +36,7 @@ type State string
 const (
 	StateQueued    State = "queued"
 	StateRunning   State = "running"
+	StateCanceled  State = "canceled"
 	StateCompleted State = "completed"
 	StateFailed    State = "failed"
 )
@@ -47,6 +48,9 @@ const (
 	EventStarted   EventType = "started"
 	EventProgress  EventType = "progress"
 	EventRetried   EventType = "retried"
+	EventPaused    EventType = "paused"
+	EventResumed   EventType = "resumed"
+	EventCanceled  EventType = "canceled"
 	EventCompleted EventType = "completed"
 	EventFailed    EventType = "failed"
 )
@@ -84,6 +88,7 @@ type JobStatus struct {
 }
 
 type Snapshot struct {
+	Paused  bool
 	Current *JobStatus
 	Queue   []JobStatus
 	Recent  []JobStatus

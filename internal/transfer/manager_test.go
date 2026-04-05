@@ -30,6 +30,7 @@ import (
 )
 
 const flakyScheme midfs.Scheme = "flaky"
+const slowScheme midfs.Scheme = "slow"
 
 func TestManagerCopiesLocalFileToSFTP(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -289,6 +290,167 @@ func TestManagerRetriesAfterOpenWriterFailure(t *testing.T) {
 	}
 }
 
+func TestManagerPauseAndResumeQueue(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "pause.txt")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatalf("Mkdir(dest) error = %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("pause"), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+
+	snapshot := manager.Pause()
+	if !snapshot.Paused {
+		t.Fatal("Pause() did not set paused state")
+	}
+
+	job, err := manager.Submit(transfer.Request{
+		Operation: transfer.OperationCopy,
+		Sources:   []midfs.URI{midfs.NewFileURI(sourcePath)},
+		DestDir:   midfs.NewFileURI(destDir),
+	})
+	if err != nil {
+		t.Fatalf("Submit(paused copy) error = %v", err)
+	}
+
+	deadline := time.After(250 * time.Millisecond)
+	for {
+		select {
+		case event := <-manager.Events():
+			if event.Job.Job.ID == job.ID && event.Type == transfer.EventStarted {
+				t.Fatal("job started while queue was paused")
+			}
+		case <-deadline:
+			goto resume
+		}
+	}
+
+resume:
+	snapshot = manager.Resume()
+	if snapshot.Paused {
+		t.Fatal("Resume() did not clear paused state")
+	}
+
+	event := waitForTerminalEvent(t, manager.Events(), job.ID)
+	if event.Type != transfer.EventCompleted {
+		t.Fatalf("event.Type = %q, want completed", event.Type)
+	}
+}
+
+func TestManagerCancelQueuedRemovesPendingJobs(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "queued.txt")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatalf("Mkdir(dest) error = %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("queued"), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+	manager.Pause()
+
+	job, err := manager.Submit(transfer.Request{
+		Operation: transfer.OperationCopy,
+		Sources:   []midfs.URI{midfs.NewFileURI(sourcePath)},
+		DestDir:   midfs.NewFileURI(destDir),
+	})
+	if err != nil {
+		t.Fatalf("Submit(queued cancel) error = %v", err)
+	}
+
+	snapshot := manager.CancelQueued()
+	if len(snapshot.Queue) != 0 {
+		t.Fatalf("len(snapshot.Queue) = %d, want 0", len(snapshot.Queue))
+	}
+
+	manager.Resume()
+	deadline := time.After(300 * time.Millisecond)
+	var canceled bool
+	for {
+		select {
+		case event := <-manager.Events():
+			if event.Job.Job.ID != job.ID {
+				continue
+			}
+			if event.Type == transfer.EventCanceled {
+				canceled = true
+			}
+			if event.Type == transfer.EventStarted || event.Type == transfer.EventCompleted {
+				t.Fatalf("queued job unexpectedly ran: %s", event.Type)
+			}
+		case <-deadline:
+			if !canceled {
+				t.Fatal("expected canceled event for queued job")
+			}
+			if _, err := os.Stat(filepath.Join(destDir, "queued.txt")); !os.IsNotExist(err) {
+				t.Fatalf("destination file exists after queued cancel: %v", err)
+			}
+			return
+		}
+	}
+}
+
+func TestManagerCancelCurrentStopsRunningJob(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "current.bin")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatalf("Mkdir(dest) error = %v", err)
+	}
+	if err := os.WriteFile(sourcePath, bytes.Repeat([]byte("x"), 512*1024), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+
+	slow := newSlowFS(15 * time.Millisecond)
+	router := midfs.NewRouter(slow)
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+
+	job, err := manager.Submit(transfer.Request{
+		Operation: transfer.OperationCopy,
+		Sources: []midfs.URI{{
+			Scheme: slowScheme,
+			Path:   sourcePath,
+		}},
+		DestDir: midfs.URI{
+			Scheme: slowScheme,
+			Path:   destDir,
+		},
+		Conflict: transfer.ConflictOverwrite,
+		Verify:   transfer.VerifySize,
+	})
+	if err != nil {
+		t.Fatalf("Submit(cancel current) error = %v", err)
+	}
+
+	waitForEventType(t, manager.Events(), job.ID, transfer.EventStarted)
+	manager.CancelCurrent()
+
+	event := waitForEventType(t, manager.Events(), job.ID, transfer.EventCanceled)
+	if event.Job.State != transfer.StateCanceled {
+		t.Fatalf("event.Job.State = %q, want canceled", event.Job.State)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "current.bin")); !os.IsNotExist(err) {
+		t.Fatalf("destination file exists after cancel: %v", err)
+	}
+}
+
 func waitForTerminalEvent(t *testing.T, events <-chan transfer.Event, jobID string) transfer.Event {
 	t.Helper()
 
@@ -307,6 +469,28 @@ func waitForTerminalEvent(t *testing.T, events <-chan transfer.Event, jobID stri
 			}
 		case <-timeout:
 			t.Fatalf("timeout waiting for terminal event for %s", jobID)
+		}
+	}
+}
+
+func waitForEventType(t *testing.T, events <-chan transfer.Event, jobID string, wanted transfer.EventType) transfer.Event {
+	t.Helper()
+
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				t.Fatal("events channel closed before desired event")
+			}
+			if event.Job.Job.ID != jobID {
+				continue
+			}
+			if event.Type == wanted {
+				return event
+			}
+		case <-timeout:
+			t.Fatalf("timeout waiting for %s for %s", wanted, jobID)
 		}
 	}
 }
@@ -411,6 +595,18 @@ type flakyFS struct {
 	openWrites    int
 }
 
+type slowFS struct {
+	delegate midfs.FileSystem
+	delay    time.Duration
+}
+
+func newSlowFS(delay time.Duration) *slowFS {
+	return &slowFS{
+		delegate: localfs.New(),
+		delay:    delay,
+	}
+}
+
 func newFlakyFS(failOpenWrite int) *flakyFS {
 	return &flakyFS{
 		delegate:      localfs.New(),
@@ -497,6 +693,105 @@ func (f *flakyFS) withSchemeEntries(entries []midfs.Entry) []midfs.Entry {
 		result = append(result, entry)
 	}
 	return result
+}
+
+func (f *slowFS) ID() string { return "slow-local" }
+
+func (f *slowFS) Scheme() midfs.Scheme { return slowScheme }
+
+func (f *slowFS) Capabilities() uint64 { return f.delegate.Capabilities() }
+
+func (f *slowFS) List(ctx context.Context, dir midfs.URI) ([]midfs.Entry, error) {
+	entries, err := f.delegate.List(ctx, f.toFileURI(dir))
+	if err != nil {
+		return nil, err
+	}
+	return f.withSchemeEntries(entries), nil
+}
+
+func (f *slowFS) Stat(ctx context.Context, uri midfs.URI) (midfs.Entry, error) {
+	entry, err := f.delegate.Stat(ctx, f.toFileURI(uri))
+	if err != nil {
+		return midfs.Entry{}, err
+	}
+	entry.URI.Scheme = slowScheme
+	return entry, nil
+}
+
+func (f *slowFS) Mkdir(ctx context.Context, uri midfs.URI, perm os.FileMode) error {
+	return f.delegate.Mkdir(ctx, f.toFileURI(uri), perm)
+}
+
+func (f *slowFS) Rename(ctx context.Context, from midfs.URI, to midfs.URI) error {
+	return f.delegate.Rename(ctx, f.toFileURI(from), f.toFileURI(to))
+}
+
+func (f *slowFS) Remove(ctx context.Context, uri midfs.URI, recursive bool) error {
+	return f.delegate.Remove(ctx, f.toFileURI(uri), recursive)
+}
+
+func (f *slowFS) OpenReader(ctx context.Context, uri midfs.URI, opts midfs.OpenReadOptions) (io.ReadCloser, error) {
+	return f.delegate.OpenReader(ctx, f.toFileURI(uri), opts)
+}
+
+func (f *slowFS) OpenWriter(ctx context.Context, uri midfs.URI, opts midfs.OpenWriteOptions) (io.WriteCloser, error) {
+	writer, err := f.delegate.OpenWriter(ctx, f.toFileURI(uri), opts)
+	if err != nil {
+		return nil, err
+	}
+	return &slowWriteCloser{WriteCloser: writer, delay: f.delay}, nil
+}
+
+func (f *slowFS) Join(base midfs.URI, elems ...string) midfs.URI {
+	joined := f.delegate.Join(f.toFileURI(base), elems...)
+	joined.Scheme = slowScheme
+	return joined
+}
+
+func (f *slowFS) Parent(uri midfs.URI) midfs.URI {
+	parent := f.delegate.Parent(f.toFileURI(uri))
+	parent.Scheme = slowScheme
+	return parent
+}
+
+func (f *slowFS) Clean(uri midfs.URI) midfs.URI {
+	clean := f.delegate.Clean(f.toFileURI(uri))
+	clean.Scheme = slowScheme
+	return clean
+}
+
+func (f *slowFS) Close() error { return f.delegate.Close() }
+
+func (f *slowFS) toFileURI(uri midfs.URI) midfs.URI {
+	uri.Scheme = midfs.SchemeFile
+	return uri
+}
+
+func (f *slowFS) withSchemeEntries(entries []midfs.Entry) []midfs.Entry {
+	result := make([]midfs.Entry, 0, len(entries))
+	for _, entry := range entries {
+		entry.URI.Scheme = slowScheme
+		result = append(result, entry)
+	}
+	return result
+}
+
+type slowWriteCloser struct {
+	io.WriteCloser
+	delay time.Duration
+}
+
+func (w *slowWriteCloser) Write(p []byte) (int, error) {
+	time.Sleep(w.delay)
+	return w.WriteCloser.Write(p)
+}
+
+func (w *slowWriteCloser) Discard() error {
+	type discardable interface{ Discard() error }
+	if d, ok := w.WriteCloser.(discardable); ok {
+		return d.Discard()
+	}
+	return w.WriteCloser.Close()
 }
 
 func writeKnownHostsForAddr(t *testing.T, addr string, hostKey ssh.PublicKey) string {

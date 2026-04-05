@@ -13,6 +13,10 @@ import (
 )
 
 type TransferDismissMsg struct{}
+type TransferTogglePauseMsg struct{}
+type TransferCancelCurrentMsg struct{}
+type TransferCancelQueuedMsg struct{}
+type TransferOpenAuditMsg struct{}
 
 type TransferModel struct {
 	snapshot transfer.Snapshot
@@ -51,6 +55,14 @@ func (m TransferModel) Update(msg tea.KeyMsg) (TransferModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		return m, func() tea.Msg { return TransferDismissMsg{} }
+	case "p":
+		return m, func() tea.Msg { return TransferTogglePauseMsg{} }
+	case "c":
+		return m, func() tea.Msg { return TransferCancelCurrentMsg{} }
+	case "k":
+		return m, func() tea.Msg { return TransferCancelQueuedMsg{} }
+	case "a":
+		return m, func() tea.Msg { return TransferOpenAuditMsg{} }
 	}
 	return m, nil
 }
@@ -84,7 +96,11 @@ func (m TransferModel) View(th theme.Theme, screenWidth, screenHeight int) strin
 		}
 	} else {
 		lines = append(lines, headingStyle.Render(" Current"))
-		lines = append(lines, dimStyle.Render(" idle"))
+		idle := "idle"
+		if m.snapshot.Paused {
+			idle = "paused"
+		}
+		lines = append(lines, dimStyle.Render(" "+idle))
 	}
 
 	if len(m.snapshot.Queue) > 0 {
@@ -92,6 +108,11 @@ func (m TransferModel) View(th theme.Theme, screenWidth, screenHeight int) strin
 		for _, queued := range m.snapshot.Queue[:min(3, len(m.snapshot.Queue))] {
 			lines = append(lines, dimStyle.Render(" "+padRight(transferTitle(queued), innerWidth-1)))
 		}
+	}
+
+	if m.snapshot.Paused {
+		lines = append(lines, headingStyle.Render(" Queue"))
+		lines = append(lines, dimStyle.Render(" "+padRight("Paused: current job can finish, but queued work will not start until resumed.", innerWidth-1)))
 	}
 
 	if len(m.snapshot.Recent) > 0 {
@@ -104,6 +125,9 @@ func (m TransferModel) View(th theme.Theme, screenWidth, screenHeight int) strin
 			if recent.State == transfer.StateFailed {
 				style = failureStyle
 			}
+			if recent.State == transfer.StateCanceled {
+				style = lipgloss.NewStyle().Background(bg).Foreground(highlight)
+			}
 			lines = append(lines, style.Render(" "+padRight(transferTitle(recent), innerWidth-1)))
 			if recent.State == transfer.StateFailed && recent.Error != "" {
 				lines = append(lines, failureStyle.Render(" "+padRight(recent.Error, innerWidth-1)))
@@ -111,7 +135,19 @@ func (m TransferModel) View(th theme.Theme, screenWidth, screenHeight int) strin
 		}
 	}
 
-	footer := keyStyle.Render(" Esc") + dimStyle.Render(":Hide") +
+	pauseLabel := "Pause"
+	if m.snapshot.Paused {
+		pauseLabel = "Resume"
+	}
+	footer := keyStyle.Render(" p") + dimStyle.Render(":"+pauseLabel) +
+		dimStyle.Render("  ") +
+		keyStyle.Render("c") + dimStyle.Render(":Cancel") +
+		dimStyle.Render("  ") +
+		keyStyle.Render("k") + dimStyle.Render(":Clear queued") +
+		dimStyle.Render("  ") +
+		keyStyle.Render("a") + dimStyle.Render(":Audit") +
+		dimStyle.Render("  ") +
+		keyStyle.Render("Esc") + dimStyle.Render(":Hide") +
 		dimStyle.Render("  ") +
 		keyStyle.Render("Queue") + dimStyle.Render(fmt.Sprintf(": %d", len(m.snapshot.Queue)))
 	footerWidth := lipgloss.Width(footer)

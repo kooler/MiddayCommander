@@ -71,6 +71,7 @@ type Model struct {
 	bookmarks       *dialogs.BookmarksModel
 	profiles        *dialogs.ProfilesModel
 	connect         *dialogs.ConnectModel
+	auditLog        *dialogs.AuditModel
 	transferOptions *dialogs.TransferOptionsModel
 	transfers       *dialogs.TransferModel
 	help            *help.Model
@@ -273,6 +274,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connect = nil
 		return m, nil
 
+	case dialogs.AuditDismissMsg:
+		m.auditLog = nil
+		return m, nil
+
+	case dialogs.AuditRefreshMsg:
+		return m.startAudit()
+
 	case dialogs.TransferOptionsSubmitMsg:
 		m.transferOptions = nil
 		return m.startTransfer(msg.Operation, msg.Conflict, msg.Verify, msg.Retries)
@@ -285,6 +293,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.transfers = nil
 		m.transferHidden = true
 		return m, nil
+
+	case dialogs.TransferTogglePauseMsg:
+		if m.transferMgr != nil {
+			snapshot := m.transferMgr.TogglePause()
+			if m.transfers != nil {
+				m.transfers.SetSnapshot(snapshot)
+			}
+		}
+		return m, nil
+
+	case dialogs.TransferCancelCurrentMsg:
+		if m.transferMgr != nil {
+			snapshot := m.transferMgr.CancelCurrent()
+			if m.transfers != nil {
+				m.transfers.SetSnapshot(snapshot)
+			}
+		}
+		return m, nil
+
+	case dialogs.TransferCancelQueuedMsg:
+		if m.transferMgr != nil {
+			snapshot := m.transferMgr.CancelQueued()
+			if m.transfers != nil {
+				m.transfers.SetSnapshot(snapshot)
+			}
+		}
+		return m, nil
+
+	case dialogs.TransferOpenAuditMsg:
+		return m.startAudit()
 
 	// Fuzzy finder internal messages — route to fuzzy model
 	case fuzzy.FileWalkMsg:
@@ -386,6 +424,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case transfer.EventCompleted:
 			cmds = append(cmds, m.refreshBothPanels())
+		case transfer.EventCanceled:
+			cmds = append(cmds, m.refreshBothPanels())
 		case transfer.EventFailed:
 			cmds = append(cmds, m.refreshBothPanels())
 			if msg.Job.Error != "" {
@@ -431,6 +471,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shiftHeld = hasShiftModifier(msg)
 
 		// Help overlay gets priority
+		if m.auditLog != nil {
+			newAudit, cmd := m.auditLog.Update(msg)
+			m.auditLog = &newAudit
+			return m, cmd
+		}
+
 		if m.help != nil {
 			newHelp, cmd := m.help.Update(msg)
 			m.help = &newHelp
@@ -494,10 +540,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if m.transfers != nil && (msg.String() == "esc" || msg.String() == "q") {
+		if m.transfers != nil {
 			newTransfers, cmd := m.transfers.Update(msg)
-			m.transfers = &newTransfers
-			return m, cmd
+			if cmd != nil {
+				m.transfers = &newTransfers
+				return m, cmd
+			}
 		}
 
 		// Double-Esc to quit
@@ -592,7 +640,11 @@ func (m Model) View() string {
 
 	screen := lipgloss.JoinVertical(lipgloss.Left, panels, fkeyView)
 
-	if m.help != nil {
+	if m.auditLog != nil {
+		box := m.auditLog.View(m.theme, m.width, m.height)
+		bw, bh := m.auditLog.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.help != nil {
 		box := m.help.View(m.theme, m.width, m.height)
 		bw, bh := m.help.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
@@ -784,6 +836,13 @@ func (m Model) startGoTo() (tea.Model, tea.Cmd) {
 func (m Model) startHelp() (tea.Model, tea.Cmd) {
 	h := help.New(m.cfg.Keys, m.width, m.height)
 	m.help = &h
+	return m, nil
+}
+
+func (m Model) startAudit() (tea.Model, tea.Cmd) {
+	entries, err := audit.ReadRecent(config.AuditLogPath(), 64)
+	am := dialogs.NewAudit(config.AuditLogPath(), entries, err, m.width, m.height)
+	m.auditLog = &am
 	return m, nil
 }
 

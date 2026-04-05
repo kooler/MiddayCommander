@@ -27,6 +27,11 @@ var (
 
 const retryBackoff = 350 * time.Millisecond
 
+type discardWriteCloser interface {
+	io.WriteCloser
+	Discard() error
+}
+
 type Manager struct {
 	router *midfs.Router
 	audit  audit.Logger
@@ -34,13 +39,17 @@ type Manager struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu      sync.Mutex
-	closed  bool
-	nextID  uint64
-	status  map[string]*JobStatus
-	queue   []string
-	recent  []string
-	current string
+	mu            sync.Mutex
+	pauseCond     *sync.Cond
+	closed        bool
+	paused        bool
+	nextID        uint64
+	status        map[string]*JobStatus
+	queue         []string
+	recent        []string
+	current       string
+	canceled      map[string]struct{}
+	currentCancel context.CancelFunc
 
 	jobs   chan Job
 	events chan Event
@@ -53,14 +62,16 @@ func NewManager(router *midfs.Router, logger audit.Logger) *Manager {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
-		router: router,
-		audit:  logger,
-		ctx:    ctx,
-		cancel: cancel,
-		status: make(map[string]*JobStatus),
-		jobs:   make(chan Job, 32),
-		events: make(chan Event, 128),
+		router:   router,
+		audit:    logger,
+		ctx:      ctx,
+		cancel:   cancel,
+		status:   make(map[string]*JobStatus),
+		canceled: make(map[string]struct{}),
+		jobs:     make(chan Job, 32),
+		events:   make(chan Event, 128),
 	}
+	m.pauseCond = sync.NewCond(&m.mu)
 	m.wg.Add(1)
 	go m.worker()
 	return m
@@ -143,6 +154,7 @@ func (m *Manager) Close() error {
 		return nil
 	}
 	m.closed = true
+	m.pauseCond.Broadcast()
 	m.mu.Unlock()
 
 	m.cancel()
@@ -155,6 +167,10 @@ func (m *Manager) worker() {
 	defer m.wg.Done()
 
 	for {
+		if !m.waitIfResumed() {
+			return
+		}
+
 		select {
 		case <-m.ctx.Done():
 			return
@@ -162,13 +178,18 @@ func (m *Manager) worker() {
 			if !ok {
 				return
 			}
+			if m.consumeCanceled(job.ID) {
+				continue
+			}
+			jobCtx, jobCancel := context.WithCancel(m.ctx)
+			m.setCurrentCancel(job.ID, jobCancel)
 			m.markStarted(job.ID)
 
 			var finalErr error
 			completed := false
 			maxAttempts := job.Retries + 1
 			for attempt := 1; attempt <= maxAttempts; attempt++ {
-				finalErr = m.executeJob(m.ctx, job)
+				finalErr = m.executeJob(jobCtx, job)
 				if finalErr == nil {
 					completed = true
 					break
@@ -182,14 +203,32 @@ func (m *Manager) worker() {
 					break
 				}
 			}
+			jobCancel()
+			m.clearCurrentCancel(job.ID)
 
 			if completed {
 				m.markFinished(job.ID, StateCompleted, nil)
 				continue
 			}
+			if errors.Is(finalErr, context.Canceled) {
+				m.markFinished(job.ID, StateCanceled, finalErr)
+				continue
+			}
 			m.markFinished(job.ID, StateFailed, finalErr)
 		}
 	}
+}
+
+func (m *Manager) waitIfResumed() bool {
+	if m == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for m.paused && !m.closed {
+		m.pauseCond.Wait()
+	}
+	return !m.closed
 }
 
 func (m *Manager) markStarted(jobID string) {
@@ -284,13 +323,21 @@ func (m *Manager) markFinished(jobID string, state State, err error) {
 	status.State = state
 	status.CompletedAt = time.Now()
 	if err != nil {
-		status.Error = err.Error()
+		if state == StateCanceled {
+			status.Error = "canceled"
+		} else {
+			status.Error = err.Error()
+		}
 		status.Progress.Err = err
 	} else {
 		status.Error = ""
 		status.Progress.Err = nil
 	}
+	if state == StateCanceled {
+		status.Progress.Current = "canceled"
+	}
 	m.current = ""
+	m.currentCancel = nil
 	m.recent = append([]string{jobID}, m.recent...)
 	if len(m.recent) > 8 {
 		m.recent = m.recent[:8]
@@ -302,6 +349,8 @@ func (m *Manager) markFinished(jobID string, state State, err error) {
 	eventType := EventCompleted
 	if state == StateFailed {
 		eventType = EventFailed
+	} else if state == StateCanceled {
+		eventType = EventCanceled
 	}
 	m.emit(Event{Type: eventType, Job: statusCopy, Snapshot: snapshot})
 
@@ -313,8 +362,13 @@ func (m *Manager) markFinished(jobID string, state State, err error) {
 		Dest:      status.Job.DestDir.String(),
 	}
 	if err != nil {
-		record.Error = err.Error()
-		record.Message = "failed"
+		if state == StateCanceled {
+			record.Error = ""
+			record.Message = "canceled"
+		} else {
+			record.Error = err.Error()
+			record.Message = "failed"
+		}
 	} else {
 		record.Message = "completed"
 	}
@@ -332,7 +386,7 @@ func (m *Manager) emit(event Event) {
 }
 
 func (m *Manager) snapshotLocked() Snapshot {
-	snapshot := Snapshot{}
+	snapshot := Snapshot{Paused: m.paused}
 	if current := m.status[m.current]; current != nil {
 		currentCopy := cloneStatus(current)
 		snapshot.Current = &currentCopy
@@ -366,6 +420,158 @@ func cloneStatus(status *JobStatus) JobStatus {
 	clone := *status
 	clone.Job.Sources = append([]midfs.URI(nil), status.Job.Sources...)
 	return clone
+}
+
+func (m *Manager) Pause() Snapshot {
+	if m == nil {
+		return Snapshot{}
+	}
+	m.mu.Lock()
+	if !m.closed {
+		m.paused = true
+	}
+	snapshot := m.snapshotLocked()
+	m.mu.Unlock()
+	m.emit(Event{Type: EventPaused, Snapshot: snapshot})
+	_ = m.audit.Record(context.Background(), audit.Event{
+		Kind:    "transfer_queue",
+		Status:  "paused",
+		Message: "queue paused",
+	})
+	return snapshot
+}
+
+func (m *Manager) Resume() Snapshot {
+	if m == nil {
+		return Snapshot{}
+	}
+	m.mu.Lock()
+	if !m.closed {
+		m.paused = false
+		m.pauseCond.Broadcast()
+	}
+	snapshot := m.snapshotLocked()
+	m.mu.Unlock()
+	m.emit(Event{Type: EventResumed, Snapshot: snapshot})
+	_ = m.audit.Record(context.Background(), audit.Event{
+		Kind:    "transfer_queue",
+		Status:  "resumed",
+		Message: "queue resumed",
+	})
+	return snapshot
+}
+
+func (m *Manager) TogglePause() Snapshot {
+	if m == nil {
+		return Snapshot{}
+	}
+	m.mu.Lock()
+	paused := m.paused
+	m.mu.Unlock()
+	if paused {
+		return m.Resume()
+	}
+	return m.Pause()
+}
+
+func (m *Manager) CancelCurrent() Snapshot {
+	if m == nil {
+		return Snapshot{}
+	}
+	m.mu.Lock()
+	cancel := m.currentCancel
+	if status := m.status[m.current]; status != nil {
+		status.Error = "cancel requested"
+		status.Progress.Current = "canceling..."
+	}
+	snapshot := m.snapshotLocked()
+	currentID := m.current
+	m.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if currentID != "" {
+		_ = m.audit.Record(context.Background(), audit.Event{
+			Kind:    "transfer_queue",
+			JobID:   currentID,
+			Status:  "cancel_requested",
+			Message: "cancel current transfer",
+		})
+	}
+	return snapshot
+}
+
+func (m *Manager) CancelQueued() Snapshot {
+	if m == nil {
+		return Snapshot{}
+	}
+	now := time.Now()
+
+	m.mu.Lock()
+	queuedIDs := append([]string(nil), m.queue...)
+	m.queue = nil
+	for _, jobID := range queuedIDs {
+		status := m.status[jobID]
+		if status == nil {
+			continue
+		}
+		status.State = StateCanceled
+		status.Error = "canceled before start"
+		status.CompletedAt = now
+		m.canceled[jobID] = struct{}{}
+		m.recent = append([]string{jobID}, m.recent...)
+		if len(m.recent) > 8 {
+			m.recent = m.recent[:8]
+		}
+	}
+	snapshot := m.snapshotLocked()
+	canceledStatuses := make([]JobStatus, 0, len(queuedIDs))
+	for _, jobID := range queuedIDs {
+		if status := m.status[jobID]; status != nil {
+			canceledStatuses = append(canceledStatuses, cloneStatus(status))
+		}
+	}
+	m.mu.Unlock()
+
+	for _, status := range canceledStatuses {
+		m.emit(Event{Type: EventCanceled, Job: status, Snapshot: snapshot})
+		_ = m.audit.Record(context.Background(), audit.Event{
+			Kind:      "transfer",
+			JobID:     status.Job.ID,
+			Operation: string(status.Job.Operation),
+			Status:    string(StateCanceled),
+			Dest:      status.Job.DestDir.String(),
+			Message:   "canceled before start",
+		})
+	}
+	return snapshot
+}
+
+func (m *Manager) setCurrentCancel(jobID string, cancel context.CancelFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == jobID || m.current == "" {
+		m.currentCancel = cancel
+	}
+}
+
+func (m *Manager) clearCurrentCancel(jobID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == jobID || m.current == "" {
+		m.currentCancel = nil
+	}
+}
+
+func (m *Manager) consumeCanceled(jobID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.canceled[jobID]; ok {
+		delete(m.canceled, jobID)
+		return true
+	}
+	return false
 }
 
 func normalizeRequest(req Request, id string) (Job, error) {
@@ -578,10 +784,15 @@ func (m *Manager) copyFile(ctx context.Context, source midfs.Entry, dest midfs.U
 		return fmt.Errorf("open %s: %w", resolvedDest.String(), err)
 	}
 
-	written, copyErr := io.Copy(writer, reader)
-	closeErr := writer.Close()
-	if copyErr == nil {
-		copyErr = closeErr
+	written, copyErr := m.copyWithContext(ctx, writer, reader, job.ID, source.Name, progress)
+	if copyErr != nil {
+		if discardWriter, ok := writer.(discardWriteCloser); ok {
+			_ = discardWriter.Discard()
+		} else {
+			_ = writer.Close()
+		}
+	} else {
+		copyErr = writer.Close()
 	}
 	if copyErr != nil {
 		return fmt.Errorf("copy %s -> %s: %w", source.URI.String(), resolvedDest.String(), copyErr)
@@ -595,6 +806,44 @@ func (m *Manager) copyFile(ctx context.Context, source midfs.Entry, dest midfs.U
 	progress.DoneFiles++
 	m.markProgress(job.ID, *progress)
 	return nil
+}
+
+func (m *Manager) copyWithContext(ctx context.Context, writer io.Writer, reader io.Reader, jobID string, name string, progress *actions.Progress) (int64, error) {
+	buf := make([]byte, 64*1024)
+	baseDone := progress.DoneBytes
+	var written int64
+
+	for {
+		select {
+		case <-ctx.Done():
+			return written, ctx.Err()
+		default:
+		}
+
+		nr, readErr := reader.Read(buf)
+		if nr > 0 {
+			nw, writeErr := writer.Write(buf[:nr])
+			written += int64(nw)
+			progress.Current = name
+			progress.DoneBytes = baseDone + written
+			m.markProgress(jobID, *progress)
+			if writeErr != nil {
+				return written, writeErr
+			}
+			if nw != nr {
+				return written, io.ErrShortWrite
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return written, readErr
+		}
+	}
+
+	progress.DoneBytes = baseDone
+	return written, nil
 }
 
 func (m *Manager) resolveConflict(ctx context.Context, dest midfs.URI, source midfs.Entry, policy ConflictPolicy) (midfs.URI, bool, error) {

@@ -404,6 +404,13 @@ type atomicWriteCloser struct {
 	overwrite bool
 }
 
+func (w *atomicWriteCloser) Discard() error {
+	if w.File != nil {
+		_ = w.File.Close()
+	}
+	return w.client.Remove(w.tempPath)
+}
+
 func (w *atomicWriteCloser) Close() error {
 	if err := w.File.Close(); err != nil {
 		_ = w.client.Remove(w.tempPath)

@@ -23,6 +23,7 @@ Midday Commander (`mdc`) keeps the classic commander-style workflow while adding
 - **Remote bookmarks** stored as canonical URIs
 - **Queue-backed remote transfers** with progress overlay
 - **Local <-> remote copy and move** over SFTP with transfer options
+- **Queue controls** for pause, resume, cancel current, and clear queued work
 - **Archive browsing** for ZIP, TAR, 7z, RAR, GZ, BZ2, XZ, LZ4 and related formats
 - **File operations** including copy, move, delete, rename, and mkdir
 - **Remote mkdir / rename / delete** on SFTP-backed locations
@@ -56,6 +57,7 @@ Available now:
 - choose transfer verification mode before remote transfer starts
 - use short automatic retries for transient transfer failures
 - review in-flight and recent transfer progress in the transfer overlay
+- open the audit log from the transfer overlay without leaving the TUI
 
 Remote fuzzy find, remote external edit, and remote external view are also still deferred. Those flows remain local-only in the current build.
 
@@ -141,6 +143,7 @@ sftp://nexus@192.168.1.30/home/nexus?auth=agent&known_hosts_file=~/.ssh/known_ho
 5. Press `Enter` to queue the job.
 
 The transfer overlay opens automatically and keeps showing current, queued, and recent jobs.
+From that overlay you can also pause/resume the queue, cancel the current job, clear queued work, and open the audit log viewer.
 
 ## Keybindings
 
@@ -241,8 +244,21 @@ Bookmarks are URI-based, so local, archive, and remote SFTP locations can all be
 | Key | Action |
 |-----|--------|
 | `Esc` / `q` | Hide the overlay |
+| `p` | Pause or resume the queue |
+| `c` | Cancel the current running transfer |
+| `k` | Clear queued transfers that have not started yet |
+| `a` | Open the audit log viewer |
 
 The overlay shows the current transfer, queued jobs, recent outcomes, and retry attempt counts when a job is retried automatically.
+
+### Audit Overlay
+
+| Key | Action |
+|-----|--------|
+| `Up` / `Down` | Scroll |
+| `PgUp` / `PgDn` | Page |
+| `r` | Refresh audit entries |
+| `Esc` / `q` | Close |
 
 ## Remote Access
 

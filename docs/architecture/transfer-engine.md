@@ -14,6 +14,7 @@ It is already responsible for:
 - applying post-copy verification
 - retrying failed jobs with short backoff
 - recording transfer lifecycle events through `internal/audit`
+- exposing pause/resume/cancel queue controls to the TUI
 
 This is still not the final Phase 3/4 implementation, but the branch has moved past the earlier "SFTP transfers are blocked" boundary.
 
@@ -28,6 +29,7 @@ This is still not the final Phase 3/4 implementation, but the branch has moved p
 
 - `internal/tui/dialogs/transfer.go`
 - `internal/tui/dialogs/transfer_options.go`
+- `internal/tui/dialogs/audit.go`
 - `internal/app/app.go`
 - `internal/app/commands.go`
 
@@ -54,6 +56,13 @@ For transfers that involve SFTP, the flow is now:
 7. the worker executes the job through `internal/fs.Router`
 8. progress snapshots are emitted back to the TUI
 9. recent completion/failure state is retained in the overlay
+
+From the transfer overlay the user can now also:
+
+- pause or resume the queue
+- cancel the current running job
+- clear queued jobs that have not started yet
+- open the audit log viewer
 
 ## Job Model
 
@@ -91,6 +100,7 @@ Retries are automatic and per-job.
 - retry lifecycle is also written to the audit log
 
 Retries currently focus on making transient remote failures less disruptive. They are not yet exposed as a fully featured queue-control system with pause/cancel/resume semantics.
+Retries currently focus on making transient remote failures less disruptive. Queue controls now exist, but they are still intentionally lightweight rather than a full scheduler UI.
 
 ## Copy / Move Semantics
 
@@ -121,6 +131,7 @@ The transfer overlay currently shows:
 - file-count progress
 - byte-count progress
 - retry attempt count
+- paused queue state
 
 This is enough for visibility during local <-> remote transfers, but it is still intentionally lighter than a full queue-management UI.
 
@@ -138,11 +149,12 @@ The transfer manager records:
 
 This is foundational logging, not yet the final audit UX.
 
+The TUI now includes a read-only audit overlay so recent JSONL events can be inspected without leaving the app.
+
 ## Current Limitations
 
 The current transfer slice still leaves room for later work:
 
-- no pause / resume / cancel controls
 - no priority reordering
 - no interactive conflict prompts while a job is running
 - no user-selectable retry backoff policy
