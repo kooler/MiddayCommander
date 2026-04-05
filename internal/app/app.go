@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/kooler/MiddayCommander/internal/actions"
+	"github.com/kooler/MiddayCommander/internal/audit"
 	bookmarkstore "github.com/kooler/MiddayCommander/internal/bookmarks"
 	"github.com/kooler/MiddayCommander/internal/config"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
@@ -20,6 +22,7 @@ import (
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
 	sftpfs "github.com/kooler/MiddayCommander/internal/fs/sftp"
 	profilesstore "github.com/kooler/MiddayCommander/internal/profiles"
+	"github.com/kooler/MiddayCommander/internal/transfer"
 	"github.com/kooler/MiddayCommander/internal/tui/dialogs"
 	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
@@ -68,9 +71,11 @@ type Model struct {
 	bookmarks   *dialogs.BookmarksModel
 	profiles    *dialogs.ProfilesModel
 	connect     *dialogs.ConnectModel
+	transfers   *dialogs.TransferModel
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
+	transferHidden bool
 
 	// Saved theme for reverting on Esc in theme picker
 	themeBeforePick theme.Theme
@@ -79,6 +84,7 @@ type Model struct {
 	bookmarkStore *bookmarkstore.Store
 	profileStore  *profilesstore.Store
 	profilesErr   error
+	transferMgr   *transfer.Manager
 
 	// Pending operation state (saved while dialog is open)
 	pendingSources []midfs.URI
@@ -107,6 +113,10 @@ func New() Model {
 	}
 
 	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	auditLogger, err := audit.NewFileLogger(config.AuditLogPath())
+	if err != nil {
+		auditLogger = nil
+	}
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
 
@@ -140,15 +150,20 @@ func New() Model {
 		bookmarkStore:  bookmarkstore.LoadStore(),
 		profileStore:   profileStore,
 		profilesErr:    profileErr,
+		transferMgr:    transfer.NewManager(router, auditLogger),
 	}
 }
 
 // Close releases any router-owned resources such as pooled remote connections.
 func (m Model) Close() error {
-	if m.router == nil {
-		return nil
+	var err error
+	if m.transferMgr != nil {
+		err = errors.Join(err, m.transferMgr.Close())
 	}
-	return m.router.Close()
+	if m.router != nil {
+		err = errors.Join(err, m.router.Close())
+	}
+	return err
 }
 
 func panelKeyMapFromConfig(keys config.KeyBindings) panel.KeyMap {
@@ -171,6 +186,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.leftPanel.LoadDir(),
 		m.rightPanel.LoadDir(),
+		waitTransferEventCmd(m.transferMgr),
 	)
 }
 
@@ -254,6 +270,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialogs.ConnectDismissMsg:
 		m.connect = nil
+		return m, nil
+
+	case dialogs.TransferDismissMsg:
+		m.transfers = nil
+		m.transferHidden = true
 		return m, nil
 
 	// Fuzzy finder internal messages — route to fuzzy model
@@ -342,6 +363,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.showError("External Command Error", msg.err)
 		}
 		return m, m.refreshBothPanels()
+
+	case transfer.Event:
+		if m.transfers == nil && !m.transferHidden {
+			td := dialogs.NewTransfer(m.width, m.height)
+			m.transfers = &td
+		}
+		if m.transfers != nil {
+			m.transfers.SetSnapshot(msg.Snapshot)
+		}
+
+		cmds := []tea.Cmd{waitTransferEventCmd(m.transferMgr)}
+		switch msg.Type {
+		case transfer.EventCompleted:
+			cmds = append(cmds, m.refreshBothPanels())
+		case transfer.EventFailed:
+			cmds = append(cmds, m.refreshBothPanels())
+			if msg.Job.Error != "" {
+				errModel, errCmd := m.showError("Transfer Error", errors.New(msg.Job.Error))
+				return errModel, tea.Batch(append(cmds, errCmd)...)
+			}
+		}
+		return m, tea.Batch(cmds...)
 
 	case dialogs.Result:
 		return m.handleDialogResult(msg)
@@ -434,6 +477,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.handleDialogResult(result)
 			}
 			return m, nil
+		}
+
+		if m.transfers != nil && (msg.String() == "esc" || msg.String() == "q") {
+			newTransfers, cmd := m.transfers.Update(msg)
+			m.transfers = &newTransfers
+			return m, cmd
 		}
 
 		// Double-Esc to quit
@@ -560,6 +609,10 @@ func (m Model) View() string {
 		box := m.dialog.View(m.theme, m.width, m.height)
 		bw, bh := m.dialog.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.transfers != nil {
+		box := m.transfers.View(m.theme, m.width, m.height)
+		bw, bh := m.transfers.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
 	}
 
 	return screen
@@ -646,9 +699,6 @@ func (m Model) startCopy() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	dest := m.inactivePanel()
-	if actions.InvolvesSFTPTransfer(sources, dest) {
-		return m.showError("Copy Error", actions.UnsupportedSFTPTransferError("copy"))
-	}
 	m.pendingSources = sources
 	m.pendingDest = dest
 
@@ -664,9 +714,6 @@ func (m Model) startMove() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	dest := m.inactivePanel()
-	if actions.InvolvesSFTPTransfer(sources, dest) {
-		return m.showError("Move Error", actions.UnsupportedSFTPTransferError("move"))
-	}
 	m.pendingSources = sources
 	m.pendingDest = dest
 
@@ -804,14 +851,45 @@ func (m Model) showError(title string, err error) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) startTransfer(op transfer.Operation) (tea.Model, tea.Cmd) {
+	if m.transferMgr == nil {
+		return m.showError("Transfer Error", fmt.Errorf("transfer manager is not initialized"))
+	}
+
+	_, err := m.transferMgr.Submit(transfer.Request{
+		Operation: op,
+		Sources:   m.pendingSources,
+		DestDir:   m.pendingDest,
+		Conflict:  transfer.ConflictOverwrite,
+		Verify:    transfer.VerifySize,
+	})
+	if err != nil {
+		return m.showError("Transfer Error", err)
+	}
+
+	m.transferHidden = false
+	if m.transfers == nil {
+		td := dialogs.NewTransfer(m.width, m.height)
+		m.transfers = &td
+	}
+	m.transfers.SetSnapshot(m.transferMgr.Snapshot())
+	return m, nil
+}
+
 func (m Model) handleDialogResult(result dialogs.Result) (tea.Model, tea.Cmd) {
 	switch result.Tag {
 	case tagCopy:
 		if result.Confirmed {
+			if actions.InvolvesSFTPTransfer(m.pendingSources, m.pendingDest) {
+				return m.startTransfer(transfer.OperationCopy)
+			}
 			return m, copyCmd(m.router, m.pendingSources, m.pendingDest)
 		}
 	case tagMove:
 		if result.Confirmed {
+			if actions.InvolvesSFTPTransfer(m.pendingSources, m.pendingDest) {
+				return m.startTransfer(transfer.OperationMove)
+			}
 			return m, moveCmd(m.router, m.pendingSources, m.pendingDest)
 		}
 	case tagDelete:

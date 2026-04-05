@@ -36,3 +36,13 @@ func BookmarksPath() string {
 func ProfilesPath() string {
 	return filepath.Join(ConfigDir(), "profiles.toml")
 }
+
+// AuditLogPath returns the transfer/audit log path.
+func AuditLogPath() string {
+	return filepath.Join(ConfigDir(), "audit.log")
+}
+
+// SecretsPath returns the encrypted fallback secrets store path.
+func SecretsPath() string {
+	return filepath.Join(ConfigDir(), "secrets.json")
+}

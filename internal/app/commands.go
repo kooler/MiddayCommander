@@ -12,6 +12,7 @@ import (
 
 	"github.com/kooler/MiddayCommander/internal/actions"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
+	"github.com/kooler/MiddayCommander/internal/transfer"
 )
 
 type copyDoneMsg struct{ err error }
@@ -53,6 +54,19 @@ func renameCmd(router *midfs.Router, oldURI midfs.URI, newName string) tea.Cmd {
 	return func() tea.Msg {
 		err := actions.Rename(context.Background(), router, oldURI, newName)
 		return renameDoneMsg{err: err}
+	}
+}
+
+func waitTransferEventCmd(manager *transfer.Manager) tea.Cmd {
+	if manager == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		event, ok := <-manager.Events()
+		if !ok {
+			return nil
+		}
+		return event
 	}
 }
 

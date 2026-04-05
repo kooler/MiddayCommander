@@ -15,13 +15,16 @@ import (
 	"runtime"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/kooler/MiddayCommander/internal/config"
+	"github.com/kooler/MiddayCommander/internal/audit"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
 	sftpfs "github.com/kooler/MiddayCommander/internal/fs/sftp"
 	"github.com/kooler/MiddayCommander/internal/profiles"
+	"github.com/kooler/MiddayCommander/internal/transfer"
 	"github.com/kooler/MiddayCommander/internal/tui/dialogs"
 	"github.com/kooler/MiddayCommander/internal/ui/panel"
 	pkgsftp "github.com/pkg/sftp"
@@ -315,6 +318,83 @@ user = "alice"
 	}
 }
 
+func TestHandleDialogResultRemoteCopyStartsTransfer(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("loopback sftp tests rely on unix-flavored filesystem paths")
+	}
+
+	localRoot := t.TempDir()
+	sourcePath := filepath.Join(localRoot, "notes.txt")
+	if err := os.WriteFile(sourcePath, []byte("transfer me"), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+
+	remoteRoot := t.TempDir()
+	identityFile := writePrivateKeyForAppTest(t)
+	clientPublicKey := readPublicKeyForAppTest(t, identityFile)
+	addr, knownHostsPath, cleanup := startGoToTestSFTPServer(t, clientPublicKey)
+	defer cleanup()
+
+	host, port, err := splitPortForAppTest(addr)
+	if err != nil {
+		t.Fatalf("splitPortForAppTest() error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+
+	remoteURI := midfs.URI{
+		Scheme: midfs.SchemeSFTP,
+		Host:   host,
+		Port:   port,
+		User:   "tester",
+		Path:   remoteRoot,
+		Query: map[string]string{
+			sftpfs.QueryAuth:           profiles.AuthKey,
+			sftpfs.QueryIdentityFile:   identityFile,
+			sftpfs.QueryKnownHostsFile: knownHostsPath,
+		},
+	}
+
+	model := Model{
+		router:        router,
+		transferMgr:   manager,
+		leftPanel:     panel.New(router, midfs.NewFileURI(localRoot), panel.KeyMap{}),
+		rightPanel:    panel.New(router, remoteURI, panel.KeyMap{}),
+		focus:         FocusLeft,
+		pendingSources: []midfs.URI{midfs.NewFileURI(sourcePath)},
+		pendingDest:   remoteURI,
+	}
+	model.leftPanel.SetActive(true)
+
+	updatedModel, cmd := model.handleDialogResult(dialogs.Result{
+		Kind:      dialogs.KindConfirm,
+		Confirmed: true,
+		Tag:       tagCopy,
+	})
+	if cmd != nil {
+		t.Fatalf("handleDialogResult(copy remote) cmd = %v, want nil", cmd)
+	}
+
+	updated := updatedModel.(Model)
+	if updated.transfers == nil {
+		t.Fatal("handleDialogResult(copy remote) did not open transfers overlay")
+	}
+
+	waitForTransferCompletion(t, manager.Events())
+
+	data, err := os.ReadFile(filepath.Join(remoteRoot, "notes.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(remote) error = %v", err)
+	}
+	if string(data) != "transfer me" {
+		t.Fatalf("remote data = %q, want %q", string(data), "transfer me")
+	}
+}
+
 type closeTrackingFS struct {
 	closed bool
 }
@@ -356,6 +436,25 @@ func (f *closeTrackingFS) Clean(uri midfs.URI) midfs.URI { return uri }
 func (f *closeTrackingFS) Close() error {
 	f.closed = true
 	return nil
+}
+
+func waitForTransferCompletion(t *testing.T, events <-chan transfer.Event) transfer.Event {
+	t.Helper()
+
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				t.Fatal("transfer events channel closed before completion")
+			}
+			if event.Type == transfer.EventCompleted || event.Type == transfer.EventFailed {
+				return event
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for transfer completion")
+		}
+	}
 }
 
 func startGoToTestSFTPServer(t *testing.T, allowedPubKey ssh.PublicKey) (string, string, func()) {
