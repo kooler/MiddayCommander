@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/kooler/MiddayCommander/internal/config"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
@@ -191,6 +192,24 @@ func TestProfileSelectMsgLoadsActivePanel(t *testing.T) {
 	entry := updated.leftPanel.CurrentEntry()
 	if entry == nil || entry.URI.Scheme != midfs.SchemeSFTP {
 		t.Fatalf("CurrentEntry() = %#v, want sftp entry", entry)
+	}
+}
+
+func TestDispatchKeyRemoteConnectOpensProfilesOverlay(t *testing.T) {
+	model := Model{
+		cfg:          config.Default(),
+		keyMap:       KeyMapFromConfig(config.Default().Keys),
+		profileStore: &profiles.Store{},
+	}
+
+	updatedModel, cmd := model.dispatchKey("ctrl+k")
+	if cmd != nil {
+		t.Fatalf("dispatchKey(ctrl+k) cmd = %v, want nil", cmd)
+	}
+
+	updated := updatedModel.(Model)
+	if updated.profiles == nil {
+		t.Fatal("dispatchKey(ctrl+k) did not open profiles overlay")
 	}
 }
 

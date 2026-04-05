@@ -464,6 +464,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keyMap.GoTo):
 			return m.startGoTo()
 
+		case key.Matches(msg, m.keyMap.RemoteConnect):
+			return m.startProfiles()
+
 		case key.Matches(msg, m.keyMap.FuzzyFind):
 			return m.startFuzzyFind()
 
@@ -560,6 +563,8 @@ func (m Model) dispatchKey(raw string) (tea.Model, tea.Cmd) {
 		return m.startEdit()
 	case contains(cfg.GoTo, raw):
 		return m.startGoTo()
+	case contains(cfg.RemoteConnect, raw):
+		return m.startProfiles()
 	case contains(cfg.Help, raw):
 		return m.startHelp()
 	case contains(cfg.Bookmarks, raw):

@@ -57,12 +57,13 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo        StringOrList `toml:"goto"`
-	FuzzyFind   StringOrList `toml:"fuzzy_find"`
-	Bookmarks   StringOrList `toml:"bookmarks"`
-	Help        StringOrList `toml:"help"`
-	ThemePicker StringOrList `toml:"theme_picker"`
-	CmdExec     StringOrList `toml:"cmd_exec"`
+	GoTo          StringOrList `toml:"goto"`
+	RemoteConnect StringOrList `toml:"remote_connect"`
+	FuzzyFind     StringOrList `toml:"fuzzy_find"`
+	Bookmarks     StringOrList `toml:"bookmarks"`
+	Help          StringOrList `toml:"help"`
+	ThemePicker   StringOrList `toml:"theme_picker"`
+	CmdExec       StringOrList `toml:"cmd_exec"`
 }
 
 // StringOrList can unmarshal from either a single string or a list of strings.
@@ -124,12 +125,13 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:        StringOrList{"ctrl+g"},
-		FuzzyFind:   StringOrList{"f9", "ctrl+p"},
-		Bookmarks:   StringOrList{"f2", "ctrl+b"},
-		Help:        StringOrList{"f1"},
-		ThemePicker: StringOrList{"ctrl+t"},
-		CmdExec:     StringOrList{"ctrl+r"},
+		GoTo:          StringOrList{"ctrl+g"},
+		RemoteConnect: StringOrList{"ctrl+k", "shift+f2"},
+		FuzzyFind:     StringOrList{"f9", "ctrl+p"},
+		Bookmarks:     StringOrList{"f2", "ctrl+b"},
+		Help:          StringOrList{"f1"},
+		ThemePicker:   StringOrList{"ctrl+t"},
+		CmdExec:       StringOrList{"ctrl+r"},
 	}
 }
 
@@ -187,6 +189,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.SelectDown, src.SelectDown)
 	mergeKey(&dst.QuickSearch, src.QuickSearch)
 	mergeKey(&dst.GoTo, src.GoTo)
+	mergeKey(&dst.RemoteConnect, src.RemoteConnect)
 	mergeKey(&dst.FuzzyFind, src.FuzzyFind)
 	mergeKey(&dst.Bookmarks, src.Bookmarks)
 	mergeKey(&dst.Help, src.Help)
@@ -243,6 +246,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.SelectDown)
 	normalizeSlice(&kb.QuickSearch)
 	normalizeSlice(&kb.GoTo)
+	normalizeSlice(&kb.RemoteConnect)
 	normalizeSlice(&kb.FuzzyFind)
 	normalizeSlice(&kb.Bookmarks)
 	normalizeSlice(&kb.Help)

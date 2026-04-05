@@ -75,6 +75,7 @@ func (m Model) buildEntries() []entry {
 		{"Go to bottom", fmtKeys(k.End)},
 		{"Go back", fmtKeys(k.GoBack)},
 		{"Go to path", fmtKeys(k.GoTo)},
+		{"Remote connect", fmtKeys(k.RemoteConnect)},
 		{"Switch panel", fmtKeys(k.TogglePanel)},
 		{"Swap panels", fmtKeys(k.SwapPanels)},
 		{"", ""},
