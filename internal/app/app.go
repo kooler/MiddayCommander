@@ -66,16 +66,17 @@ type Model struct {
 	height     int
 
 	// Overlays
-	dialog      *dialogs.Model
-	fuzzy       *fuzzy.Model
-	bookmarks   *dialogs.BookmarksModel
-	profiles    *dialogs.ProfilesModel
-	connect     *dialogs.ConnectModel
-	transfers   *dialogs.TransferModel
-	help        *help.Model
-	themePicker *themepicker.Model
-	cmdExec     *cmdexec.Model
-	transferHidden bool
+	dialog          *dialogs.Model
+	fuzzy           *fuzzy.Model
+	bookmarks       *dialogs.BookmarksModel
+	profiles        *dialogs.ProfilesModel
+	connect         *dialogs.ConnectModel
+	transferOptions *dialogs.TransferOptionsModel
+	transfers       *dialogs.TransferModel
+	help            *help.Model
+	themePicker     *themepicker.Model
+	cmdExec         *cmdexec.Model
+	transferHidden  bool
 
 	// Saved theme for reverting on Esc in theme picker
 	themeBeforePick theme.Theme
@@ -272,6 +273,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.connect = nil
 		return m, nil
 
+	case dialogs.TransferOptionsSubmitMsg:
+		m.transferOptions = nil
+		return m.startTransfer(msg.Operation, msg.Conflict, msg.Verify, msg.Retries)
+
+	case dialogs.TransferOptionsDismissMsg:
+		m.transferOptions = nil
+		return m, nil
+
 	case dialogs.TransferDismissMsg:
 		m.transfers = nil
 		m.transferHidden = true
@@ -447,6 +456,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.transferOptions != nil {
+			newTransferOptions, cmd := m.transferOptions.Update(msg)
+			m.transferOptions = &newTransferOptions
+			return m, cmd
+		}
+
 		// Theme picker gets priority when active
 		if m.themePicker != nil {
 			newTP, cmd := m.themePicker.Update(msg)
@@ -592,6 +607,10 @@ func (m Model) View() string {
 	} else if m.connect != nil {
 		box := m.connect.View(m.theme, m.width, m.height)
 		bw, bh := m.connect.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.transferOptions != nil {
+		box := m.transferOptions.View(m.theme, m.width, m.height)
+		bw, bh := m.transferOptions.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
 	} else if m.themePicker != nil {
 		box := m.themePicker.View(m.theme, m.width, m.height)
@@ -851,7 +870,13 @@ func (m Model) showError(title string, err error) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) startTransfer(op transfer.Operation) (tea.Model, tea.Cmd) {
+func (m Model) startTransferOptions(op transfer.Operation) (tea.Model, tea.Cmd) {
+	to := dialogs.NewTransferOptions(op, len(m.pendingSources), m.pendingDest, m.width, m.height)
+	m.transferOptions = &to
+	return m, nil
+}
+
+func (m Model) startTransfer(op transfer.Operation, conflict transfer.ConflictPolicy, verify transfer.VerifyMode, retries int) (tea.Model, tea.Cmd) {
 	if m.transferMgr == nil {
 		return m.showError("Transfer Error", fmt.Errorf("transfer manager is not initialized"))
 	}
@@ -860,8 +885,9 @@ func (m Model) startTransfer(op transfer.Operation) (tea.Model, tea.Cmd) {
 		Operation: op,
 		Sources:   m.pendingSources,
 		DestDir:   m.pendingDest,
-		Conflict:  transfer.ConflictOverwrite,
-		Verify:    transfer.VerifySize,
+		Conflict:  conflict,
+		Verify:    verify,
+		Retries:   retries,
 	})
 	if err != nil {
 		return m.showError("Transfer Error", err)
@@ -881,14 +907,14 @@ func (m Model) handleDialogResult(result dialogs.Result) (tea.Model, tea.Cmd) {
 	case tagCopy:
 		if result.Confirmed {
 			if actions.InvolvesSFTPTransfer(m.pendingSources, m.pendingDest) {
-				return m.startTransfer(transfer.OperationCopy)
+				return m.startTransferOptions(transfer.OperationCopy)
 			}
 			return m, copyCmd(m.router, m.pendingSources, m.pendingDest)
 		}
 	case tagMove:
 		if result.Confirmed {
 			if actions.InvolvesSFTPTransfer(m.pendingSources, m.pendingDest) {
-				return m.startTransfer(transfer.OperationMove)
+				return m.startTransferOptions(transfer.OperationMove)
 			}
 			return m, moveCmd(m.router, m.pendingSources, m.pendingDest)
 		}

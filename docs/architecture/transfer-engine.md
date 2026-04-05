@@ -2,80 +2,160 @@
 
 ## Current Status
 
-The queue-based transfer engine is still not implemented.
+The transfer engine is now present as an initial production-oriented slice under `internal/transfer`.
 
-Phase 1 moved file operations onto shared `fs.URI` and router-based dispatch. Phase 2 adds native SFTP browsing and direct remote mutations, but still stops short of full transfer orchestration.
+It is already responsible for:
 
-## What Exists Today
+- queueing transfer jobs
+- running them in the background
+- emitting progress snapshots to the Bubble Tea app
+- handling local <-> SFTP copy and move flows
+- applying conflict policy before writes
+- applying post-copy verification
+- retrying failed jobs with short backoff
+- recording transfer lifecycle events through `internal/audit`
 
-Current file-operation behavior is split into two groups.
+This is still not the final Phase 3/4 implementation, but the branch has moved past the earlier "SFTP transfers are blocked" boundary.
 
-### Direct filesystem mutations
+## Module Boundary
 
-These run directly through the active filesystem adapter:
+### Engine
 
-- local mkdir / rename / delete
-- remote SFTP mkdir / rename / delete
-- local file writes
-- direct remote file writes used by the SFTP adapter
+- `internal/transfer/types.go`
+- `internal/transfer/manager.go`
 
-These are not transfer-engine features. They are direct mutations on a single filesystem endpoint.
+### TUI integration
 
-### Transfer-style operations
+- `internal/tui/dialogs/transfer.go`
+- `internal/tui/dialogs/transfer_options.go`
+- `internal/app/app.go`
+- `internal/app/commands.go`
 
-These still flow through `internal/actions`:
+### Supporting packages
 
-- copy
-- move
+- `internal/audit`
+- `internal/secrets`
 
-For now:
+## Transfer Flow
 
-- local <-> local copy and move work
-- archive sources remain read-only
-- any copy or move that involves SFTP is blocked intentionally
+For transfers that stay entirely local, the existing direct action path is still used.
 
-This is enforced by `internal/actions/transfer_guard.go`.
+For transfers that involve SFTP, the flow is now:
 
-## Why SFTP Transfers Are Deferred
+1. the user presses `F5` or `F6`
+2. the standard confirm dialog opens
+3. the app opens `Transfer Options`
+4. the user chooses:
+   - conflict policy
+   - verification mode
+   - retry count
+5. the app submits a normalized `transfer.Request`
+6. `internal/transfer.Manager` enqueues the job
+7. the worker executes the job through `internal/fs.Router`
+8. progress snapshots are emitted back to the TUI
+9. recent completion/failure state is retained in the overlay
 
-Cross-filesystem transfers need more than raw read/write support. They also need:
+## Job Model
 
-- queue management
-- progress reporting
-- overwrite policy handling
-- recursive scheduling
-- recovery and retry behavior
-- optional verification
-- UI that explains what is in flight
+Each queued job currently carries:
 
-Phase 2 avoids shipping partial remote transfer behavior that would be hard to trust or reason about.
+- operation: `copy` or `move`
+- source URIs
+- destination directory URI
+- conflict policy
+- verify mode
+- retry count
 
-## Present UX Boundary
+Current conflict policies:
 
-In the current build:
+- `overwrite`
+- `skip`
+- `rename`
 
-- remote panels can browse SFTP targets
-- remote panels can create directories
-- remote panels can rename entries
-- remote panels can delete entries
-- `F5` and `F6` are rejected when SFTP is involved
+The engine still understands `ask`, but the UI does not expose it yet because there is not yet a mid-transfer interactive resolution loop.
 
-The error is intentional and marks the boundary between "filesystem operations" and the not-yet-landed transfer engine.
+Current verify modes:
 
-## Planned Phase 3 Direction
+- `none`
+- `size`
+- `sha256`
 
-Phase 3 is expected to add:
+## Retry Behavior
 
-- queue-backed transfer scheduling
-- background workers
-- progress events for Bubble Tea
-- local <-> remote copy
-- remote-aware move behavior
-- overwrite/conflict policy handling
+Retries are automatic and per-job.
 
-Later phases can then layer on:
+- the first execution is attempt `1`
+- each configured retry adds one more possible attempt
+- the manager waits for a short increasing backoff before retrying
+- retry state is visible in the transfer overlay
+- retry lifecycle is also written to the audit log
 
-- verification modes
-- audit logging
-- retries
-- more durable transfer semantics
+Retries currently focus on making transient remote failures less disruptive. They are not yet exposed as a fully featured queue-control system with pause/cancel/resume semantics.
+
+## Copy / Move Semantics
+
+### Copy
+
+- files are streamed through the shared filesystem interface
+- the writer uses best-effort atomic output when the destination adapter supports it
+- destination conflict handling runs before opening the writer
+- verification runs after the copy completes
+
+### Move
+
+- same-filesystem rename is attempted first when possible
+- otherwise move falls back to:
+  1. copy
+  2. verify
+  3. delete source
+
+This makes cross-filesystem move behave like a safe composed operation instead of assuming rename semantics across endpoints.
+
+## Progress Model
+
+The transfer overlay currently shows:
+
+- current job
+- queued jobs
+- recent jobs
+- file-count progress
+- byte-count progress
+- retry attempt count
+
+This is enough for visibility during local <-> remote transfers, but it is still intentionally lighter than a full queue-management UI.
+
+## Audit Integration
+
+`internal/audit` currently writes JSONL events to `~/.config/mdc/audit.log`.
+
+The transfer manager records:
+
+- queued
+- started
+- retrying
+- completed
+- failed
+
+This is foundational logging, not yet the final audit UX.
+
+## Current Limitations
+
+The current transfer slice still leaves room for later work:
+
+- no pause / resume / cancel controls
+- no priority reordering
+- no interactive conflict prompts while a job is running
+- no user-selectable retry backoff policy
+- no transfer-history browser in the TUI
+- no resumable partial-file transport
+
+## Follow-on Work
+
+Later phases can build on the current engine with:
+
+- richer queue controls
+- better conflict resolution UX
+- more durable retry policy
+- stronger verification policy defaults
+- audit browsing and filtering
+- secret-provider-backed remote credentials

@@ -20,10 +20,12 @@ import (
 )
 
 var (
-	ErrClosed                   = errors.New("transfer manager is closed")
-	ErrConflictNeedsResolution  = errors.New("transfer conflict requires interactive resolution")
-	ErrVerificationFailed       = errors.New("transfer verification failed")
+	ErrClosed                  = errors.New("transfer manager is closed")
+	ErrConflictNeedsResolution = errors.New("transfer conflict requires interactive resolution")
+	ErrVerificationFailed      = errors.New("transfer verification failed")
 )
+
+const retryBackoff = 350 * time.Millisecond
 
 type Manager struct {
 	router *midfs.Router
@@ -156,14 +158,36 @@ func (m *Manager) worker() {
 		select {
 		case <-m.ctx.Done():
 			return
-		case job := <-m.jobs:
+		case job, ok := <-m.jobs:
+			if !ok {
+				return
+			}
 			m.markStarted(job.ID)
-			err := m.executeJob(m.ctx, job)
-			if err != nil {
-				m.markFinished(job.ID, StateFailed, err)
+
+			var finalErr error
+			completed := false
+			maxAttempts := job.Retries + 1
+			for attempt := 1; attempt <= maxAttempts; attempt++ {
+				finalErr = m.executeJob(m.ctx, job)
+				if finalErr == nil {
+					completed = true
+					break
+				}
+				if attempt >= maxAttempts || !shouldRetry(finalErr) {
+					break
+				}
+
+				if !m.markRetry(job.ID, attempt, maxAttempts, finalErr) {
+					finalErr = m.ctx.Err()
+					break
+				}
+			}
+
+			if completed {
+				m.markFinished(job.ID, StateCompleted, nil)
 				continue
 			}
-			m.markFinished(job.ID, StateCompleted, nil)
+			m.markFinished(job.ID, StateFailed, finalErr)
 		}
 	}
 }
@@ -178,6 +202,8 @@ func (m *Manager) markStarted(jobID string) {
 	m.removeQueuedLocked(jobID)
 	m.current = jobID
 	status.State = StateRunning
+	status.Error = ""
+	status.Attempt = 1
 	status.StartedAt = time.Now()
 	snapshot := m.snapshotLocked()
 	statusCopy := cloneStatus(status)
@@ -192,6 +218,45 @@ func (m *Manager) markStarted(jobID string) {
 		Dest:      status.Job.DestDir.String(),
 		Message:   "started",
 	})
+}
+
+func (m *Manager) markRetry(jobID string, attempt int, maxAttempts int, err error) bool {
+	m.mu.Lock()
+	status := m.status[jobID]
+	if status == nil {
+		m.mu.Unlock()
+		return false
+	}
+
+	status.Attempt = attempt + 1
+	status.Error = fmt.Sprintf("attempt %d/%d failed: %v", attempt, maxAttempts, err)
+	status.Progress.DoneFiles = 0
+	status.Progress.DoneBytes = 0
+	status.Progress.Err = nil
+	status.Progress.Current = fmt.Sprintf("retrying %d/%d", status.Attempt, maxAttempts)
+	snapshot := m.snapshotLocked()
+	statusCopy := cloneStatus(status)
+	m.mu.Unlock()
+
+	m.emit(Event{Type: EventRetried, Job: statusCopy, Snapshot: snapshot})
+	_ = m.audit.Record(context.Background(), audit.Event{
+		Kind:      "transfer",
+		JobID:     status.Job.ID,
+		Operation: string(status.Job.Operation),
+		Status:    "retrying",
+		Dest:      status.Job.DestDir.String(),
+		Message:   status.Error,
+	})
+
+	timer := time.NewTimer(time.Duration(attempt) * retryBackoff)
+	defer timer.Stop()
+
+	select {
+	case <-m.ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (m *Manager) markProgress(jobID string, progress actions.Progress) {
@@ -221,6 +286,9 @@ func (m *Manager) markFinished(jobID string, state State, err error) {
 	if err != nil {
 		status.Error = err.Error()
 		status.Progress.Err = err
+	} else {
+		status.Error = ""
+		status.Progress.Err = nil
 	}
 	m.current = ""
 	m.recent = append([]string{jobID}, m.recent...)
@@ -307,6 +375,9 @@ func normalizeRequest(req Request, id string) (Job, error) {
 	if req.Operation != OperationCopy && req.Operation != OperationMove {
 		return Job{}, fmt.Errorf("unsupported transfer operation %q", req.Operation)
 	}
+	if req.Retries < 0 {
+		return Job{}, fmt.Errorf("retries must be zero or greater")
+	}
 	conflict := req.Conflict
 	if conflict == "" {
 		conflict = ConflictOverwrite
@@ -334,6 +405,7 @@ func normalizeRequest(req Request, id string) (Job, error) {
 		DestDir:   req.DestDir,
 		Conflict:  conflict,
 		Verify:    verify,
+		Retries:   req.Retries,
 	}
 	return job, nil
 }
@@ -676,4 +748,15 @@ func (m *Manager) ensureDir(ctx context.Context, dir midfs.URI, perm iofs.FileMo
 
 func osIsNotExist(err error) bool {
 	return err != nil && (errors.Is(err, os.ErrNotExist) || errors.Is(err, iofs.ErrNotExist))
+}
+
+func shouldRetry(err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, context.Canceled), errors.Is(err, ErrClosed), errors.Is(err, ErrConflictNeedsResolution):
+		return false
+	default:
+		return true
+	}
 }

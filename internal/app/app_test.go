@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/audit"
+	"github.com/kooler/MiddayCommander/internal/config"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
@@ -318,7 +318,7 @@ user = "alice"
 	}
 }
 
-func TestHandleDialogResultRemoteCopyStartsTransfer(t *testing.T) {
+func TestHandleDialogResultRemoteCopyOpensTransferOptionsAndStartsTransfer(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("loopback sftp tests rely on unix-flavored filesystem paths")
 	}
@@ -360,13 +360,13 @@ func TestHandleDialogResultRemoteCopyStartsTransfer(t *testing.T) {
 	}
 
 	model := Model{
-		router:        router,
-		transferMgr:   manager,
-		leftPanel:     panel.New(router, midfs.NewFileURI(localRoot), panel.KeyMap{}),
-		rightPanel:    panel.New(router, remoteURI, panel.KeyMap{}),
-		focus:         FocusLeft,
+		router:         router,
+		transferMgr:    manager,
+		leftPanel:      panel.New(router, midfs.NewFileURI(localRoot), panel.KeyMap{}),
+		rightPanel:     panel.New(router, remoteURI, panel.KeyMap{}),
+		focus:          FocusLeft,
 		pendingSources: []midfs.URI{midfs.NewFileURI(sourcePath)},
-		pendingDest:   remoteURI,
+		pendingDest:    remoteURI,
 	}
 	model.leftPanel.SetActive(true)
 
@@ -380,8 +380,23 @@ func TestHandleDialogResultRemoteCopyStartsTransfer(t *testing.T) {
 	}
 
 	updated := updatedModel.(Model)
-	if updated.transfers == nil {
-		t.Fatal("handleDialogResult(copy remote) did not open transfers overlay")
+	if updated.transferOptions == nil {
+		t.Fatal("handleDialogResult(copy remote) did not open transfer options overlay")
+	}
+
+	submittedModel, submitCmd := updated.Update(dialogs.TransferOptionsSubmitMsg{
+		Operation: transfer.OperationCopy,
+		Conflict:  transfer.ConflictOverwrite,
+		Verify:    transfer.VerifySize,
+		Retries:   2,
+	})
+	if submitCmd != nil {
+		t.Fatalf("Update(TransferOptionsSubmitMsg) cmd = %v, want nil", submitCmd)
+	}
+
+	submitted := submittedModel.(Model)
+	if submitted.transfers == nil {
+		t.Fatal("Update(TransferOptionsSubmitMsg) did not open transfers overlay")
 	}
 
 	waitForTransferCompletion(t, manager.Events())

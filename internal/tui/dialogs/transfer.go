@@ -127,7 +127,11 @@ func transferTitle(status transfer.JobStatus) string {
 	if status.Progress.TotalFiles > 0 {
 		progress = fmt.Sprintf(" [%d/%d]", status.Progress.DoneFiles, status.Progress.TotalFiles)
 	}
-	return fmt.Sprintf("%s -> %s%s", strings.ToUpper(string(status.Job.Operation)), status.Job.DestDir.Display(), progress)
+	attempt := ""
+	if status.TotalAttempts() > 1 {
+		attempt = fmt.Sprintf(" (%d/%d)", max(1, status.Attempt), status.TotalAttempts())
+	}
+	return fmt.Sprintf("%s -> %s%s%s", strings.ToUpper(string(status.Job.Operation)), status.Job.DestDir.Display(), attempt, progress)
 }
 
 func renderTransferBar(progress float64, innerWidth int, fillStyle, emptyStyle lipgloss.Style) string {

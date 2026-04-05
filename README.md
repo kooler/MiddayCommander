@@ -21,9 +21,14 @@ Midday Commander (`mdc`) keeps the classic commander-style workflow while adding
 - **Native SFTP browsing** with strict `known_hosts` verification
 - **Remote profiles** loaded from `profiles.toml`
 - **Remote bookmarks** stored as canonical URIs
+- **Queue-backed remote transfers** with progress overlay
+- **Local <-> remote copy and move** over SFTP with transfer options
 - **Archive browsing** for ZIP, TAR, 7z, RAR, GZ, BZ2, XZ, LZ4 and related formats
 - **File operations** including copy, move, delete, rename, and mkdir
 - **Remote mkdir / rename / delete** on SFTP-backed locations
+- **Transfer verification** with `none`, `size`, or `sha256`
+- **Automatic retry** for queued remote transfers
+- **Audit logging foundation** for transfer activity
 - **Configurable keybindings** via `config.toml`
 - **Fuzzy finder** for fast local recursive search
 - **Live theme picker** with instant preview
@@ -33,7 +38,7 @@ Midday Commander (`mdc`) keeps the classic commander-style workflow while adding
 
 ## Current Remote Scope
 
-Phase 2 remote support is intentionally focused on safe browsing and direct remote mutations.
+The current remote build goes beyond basic browsing and now includes the first transfer-manager slice.
 
 Available now:
 
@@ -45,16 +50,23 @@ Available now:
 - rename remote files and directories
 - delete remote files and directories
 - open remote locations directly with raw `sftp://...` URIs through `Go To`
-
-Still deferred to Phase 3:
-
-- local <-> remote copy
-- local <-> remote move
-- transfer queue and progress dialog
-- conflict policy UI
-- checksum-based transfer verification
+- copy local <-> remote through the transfer manager
+- move local <-> remote through the transfer manager
+- choose conflict policy before remote transfer starts
+- choose transfer verification mode before remote transfer starts
+- use short automatic retries for transient transfer failures
+- review in-flight and recent transfer progress in the transfer overlay
 
 Remote fuzzy find, remote external edit, and remote external view are also still deferred. Those flows remain local-only in the current build.
+
+Still deferred:
+
+- richer conflict resolution UX while a job is already running
+- pause / resume / cancel queue controls
+- platform-native secret stores
+- password-based SSH auth
+- remote fuzzy find
+- remote external view / edit
 
 ## Installation
 
@@ -116,6 +128,19 @@ You can also jump to a raw SFTP URI with `Ctrl-G`, for example:
 ```text
 sftp://nexus@192.168.1.30/home/nexus?auth=agent&known_hosts_file=~/.ssh/known_hosts
 ```
+
+### Start a remote transfer
+
+1. Put a local panel and a remote panel side by side.
+2. Press `F5` for copy or `F6` for move.
+3. Confirm the source and destination as usual.
+4. In the `Transfer Options` overlay, choose:
+   - conflict policy
+   - verification mode
+   - retry count
+5. Press `Enter` to queue the job.
+
+The transfer overlay opens automatically and keeps showing current, queued, and recent jobs.
 
 ## Keybindings
 
@@ -200,6 +225,25 @@ Bookmarks are URI-based, so local, archive, and remote SFTP locations can all be
 | `Enter` | Connect |
 | `Esc` | Close |
 
+### Transfer Options Overlay
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift-Tab` | Move between fields |
+| `Up` / `Down` | Move between fields |
+| `Left` / `Right` | Change the selected option |
+| `0`-`5` | Set retry count on the retries field |
+| `Enter` | Queue the transfer |
+| `Esc` | Close |
+
+### Transfers Overlay
+
+| Key | Action |
+|-----|--------|
+| `Esc` / `q` | Hide the overlay |
+
+The overlay shows the current transfer, queued jobs, recent outcomes, and retry attempt counts when a job is retried automatically.
+
 ## Remote Access
 
 ### Remote profiles
@@ -257,6 +301,17 @@ Supported auth modes in Phase 2:
 - `key`
 
 Password auth is intentionally not enabled yet.
+
+### Transfer and audit files
+
+Midday Commander currently writes runtime transfer metadata to:
+
+- `~/.config/mdc/audit.log`
+- `~/.config/mdc/secrets.json`
+
+`audit.log` is a JSONL audit trail for queued transfer activity.
+
+`secrets.json` is the encrypted fallback secrets store used only as early scaffolding for later secret-provider work. Platform-native stores are still pending.
 
 ### Manual connect
 

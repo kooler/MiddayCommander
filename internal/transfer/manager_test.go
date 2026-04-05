@@ -2,6 +2,7 @@ package transfer_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -27,6 +28,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+const flakyScheme midfs.Scheme = "flaky"
 
 func TestManagerCopiesLocalFileToSFTP(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -133,9 +136,9 @@ func TestManagerMovesSFTPFileToLocalDirectory(t *testing.T) {
 				sftpfs.QueryKnownHostsFile: knownHostsPath,
 			},
 		}},
-		DestDir:   midfs.NewFileURI(localDest),
-		Conflict:  transfer.ConflictOverwrite,
-		Verify:    transfer.VerifySize,
+		DestDir:  midfs.NewFileURI(localDest),
+		Conflict: transfer.ConflictOverwrite,
+		Verify:   transfer.VerifySize,
 	})
 	if err != nil {
 		t.Fatalf("Submit(move) error = %v", err)
@@ -155,6 +158,134 @@ func TestManagerMovesSFTPFileToLocalDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(remoteRoot, "report.txt")); !os.IsNotExist(err) {
 		t.Fatalf("remote source still exists after move: %v", err)
+	}
+}
+
+func TestManagerConflictRenameKeepsExistingDestination(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "report.txt")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatalf("Mkdir(dest) error = %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("fresh"), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(destDir, "report.txt"), []byte("existing"), 0o644); err != nil {
+		t.Fatalf("WriteFile(existing) error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+
+	job, err := manager.Submit(transfer.Request{
+		Operation: transfer.OperationCopy,
+		Sources:   []midfs.URI{midfs.NewFileURI(sourcePath)},
+		DestDir:   midfs.NewFileURI(destDir),
+		Conflict:  transfer.ConflictRename,
+		Verify:    transfer.VerifySize,
+	})
+	if err != nil {
+		t.Fatalf("Submit(rename conflict) error = %v", err)
+	}
+
+	event := waitForTerminalEvent(t, manager.Events(), job.ID)
+	if event.Type != transfer.EventCompleted {
+		t.Fatalf("event.Type = %q, want completed (err=%q)", event.Type, event.Job.Error)
+	}
+
+	data, err := os.ReadFile(filepath.Join(destDir, "report.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(existing) error = %v", err)
+	}
+	if string(data) != "existing" {
+		t.Fatalf("existing destination = %q, want %q", string(data), "existing")
+	}
+
+	renamed, err := os.ReadFile(filepath.Join(destDir, "report (copy 1).txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(renamed copy) error = %v", err)
+	}
+	if string(renamed) != "fresh" {
+		t.Fatalf("renamed copy = %q, want %q", string(renamed), "fresh")
+	}
+}
+
+func TestManagerRetriesAfterOpenWriterFailure(t *testing.T) {
+	root := t.TempDir()
+	sourcePath := filepath.Join(root, "retry.txt")
+	destDir := filepath.Join(root, "dest")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatalf("Mkdir(dest) error = %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte("retry me"), 0o644); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+
+	flaky := newFlakyFS(1)
+	router := midfs.NewRouter(flaky)
+	defer router.Close()
+
+	manager := transfer.NewManager(router, audit.NopLogger{})
+	defer manager.Close()
+
+	job, err := manager.Submit(transfer.Request{
+		Operation: transfer.OperationCopy,
+		Sources: []midfs.URI{{
+			Scheme: flakyScheme,
+			Path:   sourcePath,
+		}},
+		DestDir: midfs.URI{
+			Scheme: flakyScheme,
+			Path:   destDir,
+		},
+		Conflict: transfer.ConflictOverwrite,
+		Verify:   transfer.VerifySize,
+		Retries:  1,
+	})
+	if err != nil {
+		t.Fatalf("Submit(retry) error = %v", err)
+	}
+
+	var sawRetry bool
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case event, ok := <-manager.Events():
+			if !ok {
+				t.Fatal("events channel closed before completion")
+			}
+			if event.Job.Job.ID != job.ID {
+				continue
+			}
+			if event.Type == transfer.EventRetried {
+				sawRetry = true
+			}
+			if event.Type == transfer.EventCompleted {
+				if !sawRetry {
+					t.Fatal("expected retry event before completion")
+				}
+				if event.Job.Attempt != 2 {
+					t.Fatalf("completed attempt = %d, want 2", event.Job.Attempt)
+				}
+				data, err := os.ReadFile(filepath.Join(destDir, "retry.txt"))
+				if err != nil {
+					t.Fatalf("ReadFile(dest) error = %v", err)
+				}
+				if string(data) != "retry me" {
+					t.Fatalf("dest data = %q, want %q", string(data), "retry me")
+				}
+				return
+			}
+			if event.Type == transfer.EventFailed {
+				t.Fatalf("job failed after retry: %s", event.Job.Error)
+			}
+		case <-timeout:
+			t.Fatal("timeout waiting for retry completion")
+		}
 	}
 }
 
@@ -272,6 +403,100 @@ func handleSFTPSubsystem(channel ssh.Channel, requests <-chan *ssh.Request) {
 			_ = req.Reply(false, nil)
 		}
 	}
+}
+
+type flakyFS struct {
+	delegate      midfs.FileSystem
+	failOpenWrite int
+	openWrites    int
+}
+
+func newFlakyFS(failOpenWrite int) *flakyFS {
+	return &flakyFS{
+		delegate:      localfs.New(),
+		failOpenWrite: failOpenWrite,
+	}
+}
+
+func (f *flakyFS) ID() string { return "flaky-local" }
+
+func (f *flakyFS) Scheme() midfs.Scheme { return flakyScheme }
+
+func (f *flakyFS) Capabilities() uint64 { return f.delegate.Capabilities() }
+
+func (f *flakyFS) List(ctx context.Context, dir midfs.URI) ([]midfs.Entry, error) {
+	entries, err := f.delegate.List(ctx, f.toFileURI(dir))
+	if err != nil {
+		return nil, err
+	}
+	return f.withSchemeEntries(entries), nil
+}
+
+func (f *flakyFS) Stat(ctx context.Context, uri midfs.URI) (midfs.Entry, error) {
+	entry, err := f.delegate.Stat(ctx, f.toFileURI(uri))
+	if err != nil {
+		return midfs.Entry{}, err
+	}
+	entry.URI.Scheme = flakyScheme
+	return entry, nil
+}
+
+func (f *flakyFS) Mkdir(ctx context.Context, uri midfs.URI, perm os.FileMode) error {
+	return f.delegate.Mkdir(ctx, f.toFileURI(uri), perm)
+}
+
+func (f *flakyFS) Rename(ctx context.Context, from midfs.URI, to midfs.URI) error {
+	return f.delegate.Rename(ctx, f.toFileURI(from), f.toFileURI(to))
+}
+
+func (f *flakyFS) Remove(ctx context.Context, uri midfs.URI, recursive bool) error {
+	return f.delegate.Remove(ctx, f.toFileURI(uri), recursive)
+}
+
+func (f *flakyFS) OpenReader(ctx context.Context, uri midfs.URI, opts midfs.OpenReadOptions) (io.ReadCloser, error) {
+	return f.delegate.OpenReader(ctx, f.toFileURI(uri), opts)
+}
+
+func (f *flakyFS) OpenWriter(ctx context.Context, uri midfs.URI, opts midfs.OpenWriteOptions) (io.WriteCloser, error) {
+	f.openWrites++
+	if f.openWrites <= f.failOpenWrite {
+		return nil, fmt.Errorf("simulated open writer failure")
+	}
+	return f.delegate.OpenWriter(ctx, f.toFileURI(uri), opts)
+}
+
+func (f *flakyFS) Join(base midfs.URI, elems ...string) midfs.URI {
+	joined := f.delegate.Join(f.toFileURI(base), elems...)
+	joined.Scheme = flakyScheme
+	return joined
+}
+
+func (f *flakyFS) Parent(uri midfs.URI) midfs.URI {
+	parent := f.delegate.Parent(f.toFileURI(uri))
+	parent.Scheme = flakyScheme
+	return parent
+}
+
+func (f *flakyFS) Clean(uri midfs.URI) midfs.URI {
+	clean := f.delegate.Clean(f.toFileURI(uri))
+	clean.Scheme = flakyScheme
+	return clean
+}
+
+func (f *flakyFS) Close() error { return f.delegate.Close() }
+
+func (f *flakyFS) toFileURI(uri midfs.URI) midfs.URI {
+	uri.Scheme = midfs.SchemeFile
+	return uri
+}
+
+func (f *flakyFS) withSchemeEntries(entries []midfs.Entry) []midfs.Entry {
+	result := make([]midfs.Entry, 0, len(entries))
+	for _, entry := range entries {
+		entry.URI.Scheme = flakyScheme
+		result = append(result, entry)
+	}
+	return result
 }
 
 func writeKnownHostsForAddr(t *testing.T, addr string, hostKey ssh.PublicKey) string {

@@ -2,13 +2,13 @@
 
 ## Phase 2 Scope
 
-Phase 2 extends the Phase 1 filesystem abstraction with native SFTP-backed remote browsing and direct remote mutations. The supported schemes are now:
+The remote filesystem layer now extends the Phase 1 abstraction with native SFTP-backed browsing, direct remote mutations, and transfer-manager-backed local <-> remote copies and moves. The supported schemes are now:
 
 - `file`: local filesystem access
 - `archive`: read-only browsing inside supported archive files
 - `sftp`: remote browsing and direct remote file operations over SSH/SFTP
 
-This phase is intentionally limited to connection management, browsing, and direct remote mutations. It does not introduce the queue-based transfer engine yet.
+The filesystem layer still stays focused on adapter boundaries and URI dispatch. Queueing, retry, and transfer policy live above it in `internal/transfer`.
 
 ## Core Model
 
@@ -39,6 +39,8 @@ The UI works only with typed `fs.URI` and `fs.Entry` values. It never performs a
 
 - `internal/tui/dialogs/profiles.go`
 - `internal/tui/dialogs/connect.go`
+- `internal/tui/dialogs/transfer_options.go`
+- `internal/tui/dialogs/transfer.go`
 - `internal/app/app.go`
 
 ## URI Model
@@ -131,17 +133,16 @@ The SFTP adapter now supports direct remote mutations through the shared filesys
 
 This lets existing UI flows such as `F7`, rename, and delete work on remote panels without special-case TUI logic.
 
-### Still deferred
+### Routed through the transfer engine
 
-The transfer engine is still not present, so operations that depend on cross-panel transfer orchestration remain out of scope:
+Operations that require cross-panel orchestration now flow through `internal/transfer` instead of direct `internal/actions` calls:
 
 - local -> remote copy
 - remote -> local copy
 - local -> remote move
 - remote -> local move
-- remote -> remote copy across endpoints
 
-`internal/actions/transfer_guard.go` intentionally blocks `F5` and `F6` whenever SFTP is involved so the Phase 2 scope line stays explicit.
+The UI now opens a transfer-options overlay before queueing those jobs so conflict policy, verification mode, and retry count are explicit.
 
 ## Rename Boundaries
 
@@ -157,15 +158,15 @@ Phase 2 uses a best-effort atomic write path for SFTP writes:
 2. attempt `PosixRename`
 3. fall back to replace-by-rename when possible
 
-This is intentionally smaller in scope than the planned Phase 4 transfer verification and retry pipeline, but it already gives remote direct writes a safer default behavior than truncating in place.
+This remains intentionally smaller in scope than the full later-phase transfer pipeline, but it already gives remote direct writes a safer default behavior than truncating in place.
 
 ## Follow-on Work
 
 Later phases will build on this foundation with:
 
-- queue-backed transfer scheduling
-- transfer progress and Bubble Tea events
-- overwrite and conflict policies
-- copy verification and retries
-- audit logging
+- richer queue controls
+- transfer pause / resume / cancel
+- interactive conflict resolution during job execution
+- stronger retry policy control
+- audit browsing UX
 - secrets storage backends

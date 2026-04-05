@@ -46,6 +46,7 @@ const (
 	EventQueued    EventType = "queued"
 	EventStarted   EventType = "started"
 	EventProgress  EventType = "progress"
+	EventRetried   EventType = "retried"
 	EventCompleted EventType = "completed"
 	EventFailed    EventType = "failed"
 )
@@ -57,6 +58,7 @@ type Request struct {
 	DestDir   midfs.URI
 	Conflict  ConflictPolicy
 	Verify    VerifyMode
+	Retries   int
 }
 
 // Job is a normalized queued transfer request.
@@ -67,6 +69,7 @@ type Job struct {
 	DestDir   midfs.URI
 	Conflict  ConflictPolicy
 	Verify    VerifyMode
+	Retries   int
 }
 
 type JobStatus struct {
@@ -74,6 +77,7 @@ type JobStatus struct {
 	State       State
 	Progress    actions.Progress
 	Error       string
+	Attempt     int
 	EnqueuedAt  time.Time
 	StartedAt   time.Time
 	CompletedAt time.Time
@@ -102,6 +106,13 @@ func (j JobStatus) Percent() float64 {
 		return 1
 	}
 	return 0
+}
+
+func (j JobStatus) TotalAttempts() int {
+	if j.Job.Retries < 0 {
+		return 1
+	}
+	return j.Job.Retries + 1
 }
 
 func clamp01(value float64) float64 {
