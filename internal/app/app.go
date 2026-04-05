@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/actions"
 	bookmarkstore "github.com/kooler/MiddayCommander/internal/bookmarks"
 	"github.com/kooler/MiddayCommander/internal/config"
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
@@ -586,6 +587,9 @@ func (m Model) startCopy() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	dest := m.inactivePanel()
+	if actions.InvolvesSFTPTransfer(sources, dest) {
+		return m.showError("Copy Error", actions.UnsupportedSFTPTransferError("copy"))
+	}
 	m.pendingSources = sources
 	m.pendingDest = dest
 
@@ -601,6 +605,9 @@ func (m Model) startMove() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	dest := m.inactivePanel()
+	if actions.InvolvesSFTPTransfer(sources, dest) {
+		return m.showError("Move Error", actions.UnsupportedSFTPTransferError("move"))
+	}
 	m.pendingSources = sources
 	m.pendingDest = dest
 

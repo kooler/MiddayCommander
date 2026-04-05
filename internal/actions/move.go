@@ -8,6 +8,10 @@ import (
 )
 
 func Move(ctx context.Context, router *midfs.Router, sources []midfs.URI, destDir midfs.URI, progressFn func(Progress)) error {
+	if InvolvesSFTPTransfer(sources, destDir) {
+		return UnsupportedSFTPTransferError("move")
+	}
+
 	for _, source := range sources {
 		entry, err := router.Stat(ctx, source)
 		if err != nil {

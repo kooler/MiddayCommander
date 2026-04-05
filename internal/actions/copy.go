@@ -10,6 +10,10 @@ import (
 )
 
 func Copy(ctx context.Context, router *midfs.Router, sources []midfs.URI, destDir midfs.URI, progressFn func(Progress)) error {
+	if InvolvesSFTPTransfer(sources, destDir) {
+		return UnsupportedSFTPTransferError("copy")
+	}
+
 	totalFiles, totalBytes, err := countFilesAndBytes(ctx, router, sources)
 	if err != nil {
 		return err

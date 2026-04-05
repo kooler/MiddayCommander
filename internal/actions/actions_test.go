@@ -3,6 +3,7 @@ package actions_test
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	midfs "github.com/kooler/MiddayCommander/internal/fs"
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
+	sftpfs "github.com/kooler/MiddayCommander/internal/fs/sftp"
 )
 
 func TestFileActionsSmoke(t *testing.T) {
@@ -95,6 +97,56 @@ func TestMoveFromReadOnlyArchiveFailsBeforeCopy(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(destDir, "inside.txt")); !os.IsNotExist(statErr) {
 		t.Fatalf("Move() unexpectedly copied file into destination")
+	}
+}
+
+func TestCopyWithSFTPSourceIsDeferredToPhase3(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	root := t.TempDir()
+	destDir := filepath.Join(root, "dest")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest) error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	err := actions.Copy(ctx, router, []midfs.URI{{
+		Scheme: midfs.SchemeSFTP,
+		Host:   "files.example.test",
+		User:   "demo",
+		Path:   "/remote/inside.txt",
+	}}, midfs.NewFileURI(destDir), nil)
+	if !errors.Is(err, actions.ErrSFTPTransfersDeferred) {
+		t.Fatalf("Copy() error = %v, want ErrSFTPTransfersDeferred", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "inside.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("Copy() unexpectedly wrote a local file")
+	}
+}
+
+func TestMoveWithSFTPSourceIsDeferredToPhase3(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	root := t.TempDir()
+	destDir := filepath.Join(root, "dest")
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(dest) error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	err := actions.Move(ctx, router, []midfs.URI{{
+		Scheme: midfs.SchemeSFTP,
+		Host:   "files.example.test",
+		User:   "demo",
+		Path:   "/remote/inside.txt",
+	}}, midfs.NewFileURI(destDir), nil)
+	if !errors.Is(err, actions.ErrSFTPTransfersDeferred) {
+		t.Fatalf("Move() error = %v, want ErrSFTPTransfersDeferred", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "inside.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("Move() unexpectedly wrote a local file")
 	}
 }
 
