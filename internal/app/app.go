@@ -19,6 +19,7 @@ import (
 	archivefs "github.com/kooler/MiddayCommander/internal/fs/archive"
 	localfs "github.com/kooler/MiddayCommander/internal/fs/local"
 	sftpfs "github.com/kooler/MiddayCommander/internal/fs/sftp"
+	profilesstore "github.com/kooler/MiddayCommander/internal/profiles"
 	"github.com/kooler/MiddayCommander/internal/tui/dialogs"
 	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
@@ -65,6 +66,7 @@ type Model struct {
 	dialog      *dialogs.Model
 	fuzzy       *fuzzy.Model
 	bookmarks   *dialogs.BookmarksModel
+	profiles    *dialogs.ProfilesModel
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
@@ -74,6 +76,8 @@ type Model struct {
 
 	// Bookmark store
 	bookmarkStore *bookmarkstore.Store
+	profileStore  *profilesstore.Store
+	profilesErr   error
 
 	// Pending operation state (saved while dialog is open)
 	pendingSources []midfs.URI
@@ -117,6 +121,11 @@ func New() Model {
 		}
 	}
 
+	profileStore, profileErr := profilesstore.LoadStore()
+	if profileStore == nil {
+		profileStore = &profilesstore.Store{}
+	}
+
 	return Model{
 		router:         router,
 		leftPanel:      left,
@@ -128,6 +137,8 @@ func New() Model {
 		menuItems:      menubar.DefaultItems(cfg),
 		shiftMenuItems: menubar.ShiftItems(cfg),
 		bookmarkStore:  bookmarkstore.LoadStore(),
+		profileStore:   profileStore,
+		profilesErr:    profileErr,
 	}
 }
 
@@ -220,6 +231,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case dialogs.BookmarkDismissMsg:
 		m.bookmarks = nil
+		return m, nil
+
+	case dialogs.ProfileSelectMsg:
+		m.profiles = nil
+		m.activePanel().SetURI(msg.URI)
+		return m, m.activePanel().LoadDir()
+
+	case dialogs.ProfilesDismissMsg:
+		m.profiles = nil
 		return m, nil
 
 	// Fuzzy finder internal messages — route to fuzzy model
@@ -358,6 +378,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		if m.profiles != nil {
+			newProfiles, cmd := m.profiles.Update(msg)
+			m.profiles = &newProfiles
+			return m, cmd
+		}
+
 		// Theme picker gets priority when active
 		if m.themePicker != nil {
 			newTP, cmd := m.themePicker.Update(msg)
@@ -486,6 +512,10 @@ func (m Model) View() string {
 	} else if m.bookmarks != nil {
 		box := m.bookmarks.View(m.theme, m.width, m.height)
 		bw, bh := m.bookmarks.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.profiles != nil {
+		box := m.profiles.View(m.theme, m.width, m.height)
+		bw, bh := m.profiles.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
 	} else if m.themePicker != nil {
 		box := m.themePicker.View(m.theme, m.width, m.height)
@@ -665,6 +695,16 @@ func (m Model) startHelp() (tea.Model, tea.Cmd) {
 func (m Model) startBookmarks() (tea.Model, tea.Cmd) {
 	bm := dialogs.NewBookmarks(m.bookmarkStore, m.activePanel().URI(), m.width, m.height)
 	m.bookmarks = &bm
+	return m, nil
+}
+
+func (m Model) startProfiles() (tea.Model, tea.Cmd) {
+	if m.profilesErr != nil {
+		return m.showError("Profiles Error", m.profilesErr)
+	}
+
+	pm := dialogs.NewProfiles(m.profileStore, m.width, m.height)
+	m.profiles = &pm
 	return m, nil
 }
 

@@ -123,6 +123,77 @@ func TestModelCloseClosesRouter(t *testing.T) {
 	}
 }
 
+func TestProfileSelectMsgLoadsActivePanel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("loopback sftp tests rely on unix-flavored filesystem paths")
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "hello.txt"), []byte("hello remote"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	identityFile := writePrivateKeyForAppTest(t)
+	clientPublicKey := readPublicKeyForAppTest(t, identityFile)
+	addr, knownHostsPath, cleanup := startGoToTestSFTPServer(t, clientPublicKey)
+	defer cleanup()
+
+	host, port, err := splitPortForAppTest(addr)
+	if err != nil {
+		t.Fatalf("splitPortForAppTest() error = %v", err)
+	}
+
+	router := midfs.NewRouter(localfs.New(), archivefs.New(), sftpfs.New())
+	defer router.Close()
+
+	model := Model{
+		router:     router,
+		leftPanel:  panel.New(router, midfs.NewFileURI(root), panel.KeyMap{}),
+		rightPanel: panel.New(router, midfs.NewFileURI(root), panel.KeyMap{}),
+		focus:      FocusLeft,
+	}
+	model.leftPanel.SetActive(true)
+
+	msgModel, cmd := model.Update(dialogs.ProfileSelectMsg{
+		Profile: profiles.Profile{
+			Name: "alpha",
+			Host: host,
+			Port: port,
+			User: "tester",
+			Path: root,
+			Auth: profiles.AuthKey,
+		},
+		URI: midfs.URI{
+			Scheme: midfs.SchemeSFTP,
+			Host:   host,
+			Port:   port,
+			User:   "tester",
+			Path:   root,
+			Query: map[string]string{
+				sftpfs.QueryAuth:           profiles.AuthKey,
+				sftpfs.QueryIdentityFile:   identityFile,
+				sftpfs.QueryKnownHostsFile: knownHostsPath,
+			},
+		},
+	})
+
+	updated := msgModel.(Model)
+	loadMsg, ok := cmd().(panel.DirLoadedMsg)
+	if !ok {
+		t.Fatalf("Update(ProfileSelectMsg) msg = %T, want panel.DirLoadedMsg", cmd())
+	}
+	if loadMsg.Err != nil {
+		t.Fatalf("loadMsg.Err = %v", loadMsg.Err)
+	}
+
+	updated.leftPanel.HandleDirLoaded(loadMsg)
+	updated.leftPanel.RestoreCursor("hello.txt")
+	entry := updated.leftPanel.CurrentEntry()
+	if entry == nil || entry.URI.Scheme != midfs.SchemeSFTP {
+		t.Fatalf("CurrentEntry() = %#v, want sftp entry", entry)
+	}
+}
+
 type closeTrackingFS struct {
 	closed bool
 }
