@@ -557,6 +557,9 @@ func (m *Model) fileActionCmd(path string, action string) tea.Cmd {
 	case "edit":
 		return editFileCmd(path)
 	case "preview":
+		if m.cfg.Behavior.ViewMode == "system" {
+			return openSystemDefaultCmd(path)
+		}
 		return viewFileCmd(path)
 	default:
 		return editFileCmd(path)
