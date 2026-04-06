@@ -24,6 +24,8 @@ type BehaviorConfig struct {
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
+	// ViewMode controls how F3 opens files: "pager" (default, uses $PAGER/less) or "system" (OS default app)
+	ViewMode string `toml:"view_mode"`
 }
 
 // KeyBindings defines all configurable key bindings.
@@ -93,6 +95,7 @@ func Default() Config {
 		Behavior: BehaviorConfig{
 			EnterAction: "edit",
 			SpaceAction: "preview",
+			ViewMode:    "pager",
 		},
 		Keys: keys,
 	}
@@ -160,6 +163,9 @@ func Load() Config {
 	}
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
+	}
+	if fileCfg.Behavior.ViewMode != "" {
+		cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
 	}
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
