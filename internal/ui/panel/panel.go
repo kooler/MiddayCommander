@@ -53,17 +53,19 @@ type Model struct {
 	realFS      vfs.FS      // the original filesystem (to restore when leaving archive)
 	realPath    string      // the directory containing the archive file
 
-	keyMap KeyMap
+	keyMap       KeyMap
+	iconResolver IconResolver
 }
 
 // New creates a new panel browsing the given directory.
-func New(filesystem vfs.FS, path string, km KeyMap) Model {
+func New(filesystem vfs.FS, path string, km KeyMap, iconResolver IconResolver) Model {
 	return Model{
-		fs:       filesystem,
-		path:     path,
-		selected: make(map[int]bool),
-		sortMode: SortByName,
-		keyMap:   km,
+		fs:           filesystem,
+		path:         path,
+		selected:     make(map[int]bool),
+		sortMode:     SortByName,
+		keyMap:       km,
+		iconResolver: iconResolver,
 	}
 }
 

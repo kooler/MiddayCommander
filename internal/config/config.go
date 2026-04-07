@@ -16,6 +16,96 @@ type Config struct {
 	Theme    string         `toml:"theme"`
 	Keys     KeyBindings    `toml:"keys"`
 	Behavior BehaviorConfig `toml:"behavior"`
+	Icons    IconsConfig    `toml:"icons"`
+}
+
+// IconsConfig controls the display of Nerd Font icons in the file panel.
+type IconsConfig struct {
+	// Enabled controls whether icons are displayed (default: false).
+	Enabled bool `toml:"enabled"`
+	// Icon shown for directories.
+	Folder string `toml:"folder"`
+	// Icon shown for files without a matching extension.
+	File string `toml:"file"`
+	// Mapping of file extension (without dot) to icon.
+	Extensions map[string]string `toml:"extensions"`
+}
+
+// DefaultIconsConfig returns the default icon configuration.
+func DefaultIconsConfig() IconsConfig {
+	return IconsConfig{
+		Enabled: false,
+		Folder:  "", // nf-fa-folder
+		File:    "", // nf-fa-file
+		Extensions: map[string]string{
+			// Documents
+			"txt":  "", // nf-fa-file_text
+			"md":   "",
+			"pdf":  "", // nf-fa-file_pdf
+			"doc":  "", // nf-fa-file_word
+			"docx": "",
+			"xls":  "", // nf-fa-file_excel
+			"xlsx": "",
+
+			// Images
+			"png":  "", // nf-fa-file_image
+			"jpg":  "",
+			"jpeg": "",
+			"gif":  "",
+			"svg":  "",
+			"ico":  "",
+			"bmp":  "",
+			"webp": "",
+
+			// Archives
+			"zip": "", // nf-fa-file_archive
+			"tar": "",
+			"gz":  "",
+			"bz2": "",
+			"7z":  "",
+			"rar": "",
+			"xz":  "",
+
+			// Code
+			"go":   "", // nf-seti-go
+			"py":   "", // nf-dev-python
+			"js":   "", // nf-seti-javascript
+			"jsx":  "",
+			"ts":   "", // nf-seti-typescript
+			"tsx":  "",
+			"rs":   "", // nf-custom-rust
+			"rb":   "", // nf-dev-ruby
+			"java": "", // nf-custom-java
+			"c":    "", // nf-seti-c
+			"cpp":  "", // nf-seti-cpp
+			"h":    "",
+			"hpp":  "",
+			"cs":   "󰌛", // nf-custom-csharp
+			"php":  "", // nf-custom-php
+			"sh":   "", // nf-oct-terminal
+			"bash": "",
+
+			// Config / Markup
+			"json": "", // nf-oct-file_json
+			"yaml": "", // nf-dev-config
+			"yml":  "",
+			"toml": "", // nf-md-file_toml
+			"xml":  "󰗀", // nf-md-xml
+			"html": "", // nf-dev-html5
+			"css":  "", // nf-dev-css3
+
+			// Media
+			"mp3": "", // nf-fa-volume_up (audio)
+			"wav": "",
+			"mp4": "", // nf-fa-film (video)
+			"avi": "",
+			"mkv": "",
+
+			// Go-specific
+			"mod": "", // nf-md-go (module)
+			"sum": "",
+		},
+	}
 }
 
 // BehaviorConfig controls configurable behaviors.
@@ -58,9 +148,9 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo       StringOrList `toml:"goto"`
-	FuzzyFind  StringOrList `toml:"fuzzy_find"`
-	Bookmarks  StringOrList `toml:"bookmarks"`
+	GoTo        StringOrList `toml:"goto"`
+	FuzzyFind   StringOrList `toml:"fuzzy_find"`
+	Bookmarks   StringOrList `toml:"bookmarks"`
 	Help        StringOrList `toml:"help"`
 	ThemePicker StringOrList `toml:"theme_picker"`
 	CmdExec     StringOrList `toml:"cmd_exec"`
@@ -88,12 +178,10 @@ func Default() Config {
 	keys := DefaultKeyBindings()
 	normalizeAllKeys(&keys)
 	return Config{
-		Theme: "",
-		Behavior: BehaviorConfig{
-			EnterAction: "edit",
-			SpaceAction: "preview",
-		},
-		Keys: keys,
+		Theme:    "",
+		Behavior: BehaviorConfig{EnterAction: "edit", SpaceAction: "preview"},
+		Icons:    DefaultIconsConfig(),
+		Keys:     keys,
 	}
 }
 
@@ -125,9 +213,9 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:      StringOrList{"ctrl+g"},
-		FuzzyFind: StringOrList{"f9", "ctrl+p"},
-		Bookmarks: StringOrList{"f2", "ctrl+b"},
+		GoTo:        StringOrList{"ctrl+g"},
+		FuzzyFind:   StringOrList{"f9", "ctrl+p"},
+		Bookmarks:   StringOrList{"f2", "ctrl+b"},
 		Help:        StringOrList{"f1"},
 		ThemePicker: StringOrList{"ctrl+t"},
 		CmdExec:     StringOrList{"ctrl+r"},
@@ -162,6 +250,9 @@ func Load() Config {
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
+
+	// Merge icons config: start with defaults, overlay file config.
+	mergeIcons(&cfg.Icons, &fileCfg.Icons)
 
 	return cfg
 }
@@ -199,6 +290,29 @@ func mergeKeys(dst, src *KeyBindings) {
 func mergeKey(dst *StringOrList, src StringOrList) {
 	if len(src) > 0 {
 		*dst = src
+	}
+}
+
+// mergeIcons merges src IconsConfig into dst. Non-empty fields from src override dst.
+// Extensions are merged (src overrides dst on conflict).
+func mergeIcons(dst, src *IconsConfig) {
+	if src.Folder != "" {
+		dst.Folder = src.Folder
+	}
+	if src.File != "" {
+		dst.File = src.File
+	}
+	// Enabled is only overridden if explicitly set in file config.
+	// Since the default is false and we want false to mean "use default",
+	// we always use the file value (false or true).
+	dst.Enabled = src.Enabled
+	if src.Extensions != nil {
+		if dst.Extensions == nil {
+			dst.Extensions = make(map[string]string)
+		}
+		for ext, icon := range src.Extensions {
+			dst.Extensions[ext] = icon
+		}
 	}
 }
 

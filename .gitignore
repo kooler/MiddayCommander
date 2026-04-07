@@ -1,3 +1,7 @@
 .claude
 mdc
 dist/
+QWEN.md
+prompts/
+.gitignore
+.qwen

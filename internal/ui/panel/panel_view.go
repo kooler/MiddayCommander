@@ -11,6 +11,9 @@ import (
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
 
+// iconPadding is the number of spaces between the icon and the filename.
+const iconPadding = 1
+
 // View renders the panel as a string.
 func (m Model) View(th theme.Theme) string {
 	if m.width <= 0 || m.height <= 0 {
@@ -94,6 +97,13 @@ func (m Model) renderRow(idx, width int, th theme.Theme) string {
 	isCursor := idx == m.cursor && m.active
 	isSelected := m.selected[idx]
 
+	// Resolve icon and its display width
+	icon := m.iconResolver.ResolveIcon(name, isDir)
+	iconWidth := 0
+	if icon != "" {
+		iconWidth = m.iconResolver.IconWidth(name, isDir)
+	}
+
 	// Determine columns: name, size, time
 	sizeStr := ""
 	timeStr := ""
@@ -108,15 +118,20 @@ func (m Model) renderRow(idx, width int, th theme.Theme) string {
 		sizeStr = "<DIR>"
 	}
 
-	// Column widths: time=12, size=7, rest=name
+	// Column widths: time=12, size=7, rest=name (minus icon width + padding)
 	timeWidth := 12
 	sizeWidth := 7
-	nameWidth := width - sizeWidth - timeWidth - 2 // 2 spaces between columns
+	iconSpace := iconWidth + iconPadding
+	nameWidth := width - iconSpace - sizeWidth - timeWidth - 2 // 2 spaces between columns
 	if nameWidth < 4 {
 		nameWidth = 4
 	}
 
+	// Build the line: [icon][name] [size] [time]
 	namePart := truncOrPad(name, nameWidth)
+	if icon != "" {
+		namePart = icon + strings.Repeat(" ", iconPadding) + namePart
+	}
 	sizePart := padLeft(sizeStr, sizeWidth)
 	timePart := truncOrPad(timeStr, timeWidth)
 
