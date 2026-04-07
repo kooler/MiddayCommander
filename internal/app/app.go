@@ -436,6 +436,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case key.Matches(msg, m.keyMap.CmdExec):
 			return m.startCmdExec()
+
+		case key.Matches(msg, m.keyMap.ToggleHidden):
+			m.leftPanel.ToggleHidden()
+			m.rightPanel.ToggleHidden()
+			return m, m.refreshBothPanels()
 		}
 
 		// Delegate to active panel
