@@ -1,0 +1,62 @@
+name = "Rose Pine Dawn"
+
+[palette]
+base             = "#faf4ed"
+surface          = "#fffaf3"
+overlay          = "#f2e9e1"
+muted            = "#9893a5"
+subtle           = "#797593"
+text             = "#575279"
+love             = "#b4637a"
+gold             = "#ea9d34"
+rose             = "#d7827e"
+pine             = "#286983"
+foam             = "#56949f"
+iris             = "#907aa9"
+highlight_low    = "#f4ede8"
+highlight_medium = "#dfdad9"
+highlight_high   = "#cecacd"
+
+# ─── File Panels ─────────────────────────────────
+[panel]
+border_fg        = "pine"
+border_bg        = "base"
+border_active_fg = "rose"
+border_active_bg = "base"
+header_fg        = "pine"
+header_bg        = "base"
+header_active_fg = "rose"
+header_active_bg = "base"
+
+[panel.file]
+normal_fg        = "text"
+normal_bg        = "base"
+dir_fg           = "foam"
+dir_bg           = "base"
+dir_bold         = true
+exec_fg          = "gold"
+exec_bg          = "base"
+symlink_fg       = "iris"
+symlink_bg       = "base"
+cursor_fg        = "love"
+cursor_bg        = "hightlight_high"
+cursor_dir_fg    = "love"
+cursor_dir_bg    = "hightlight_high"
+cursor_dir_bold  = true
+selected_fg      = "gold"
+selected_bg      = "surface"
+selected_bold    = true
+
+# ─── Status Bar ──────────────────────────────────
+[statusbar]
+fg = "text"
+bg = "overlay"
+
+# ─── Menu / F-Key Hints ─────────────────────────
+[menubar]
+fg            = "text"
+bg            = "overlay"
+fkey_hint_fg  = "text"
+fkey_hint_bg  = "hightlight_high"
+fkey_label_fg = "text"
+fkey_label_bg = "overlay"
