@@ -387,7 +387,7 @@ func (m *Model) handleEnter() tea.Cmd {
 
 	// Enter on file
 	path := m.CurrentPath()
-	info := m.infos[m.cursor]
+	info := m.CurrentInfo()
 	if info != nil && isExecutable(info.Mode()) && m.cfg.Behavior.EnterAction == "execute" {
 		return func() tea.Msg { return ExecuteFileMsg{Path: path} }
 	}

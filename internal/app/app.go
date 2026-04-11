@@ -36,12 +36,13 @@ const (
 
 // Dialog tags identify which operation triggered the dialog.
 const (
-	tagCopy   = "copy"
-	tagMove   = "move"
-	tagDelete = "delete"
-	tagMkdir  = "mkdir"
-	tagRename = "rename"
-	tagGoTo   = "goto"
+	tagCopy    = "copy"
+	tagMove    = "move"
+	tagDelete  = "delete"
+	tagMkdir   = "mkdir"
+	tagRename  = "rename"
+	tagGoTo    = "goto"
+	tagExecute = "execute"
 )
 
 // Model is the root application model.
@@ -71,8 +72,9 @@ type Model struct {
 	bookmarkStore *bookmark.Store
 
 	// Pending operation state (saved while dialog is open)
-	pendingSources []string
-	pendingDest    string
+	pendingSources     []string
+	pendingDest        string
+	pendingExecutePath string
 
 	// Double-Esc to quit
 	lastEsc time.Time
@@ -254,7 +256,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.EnterAction)
 
 	case panel.ExecuteFileMsg:
-		return m, executeFileCmd(msg.Path, m.activePanel().Path())
+		if m.cfg.Behavior.ConfirmExecute == nil || *m.cfg.Behavior.ConfirmExecute {
+			m.pendingExecutePath = msg.Path
+			d := dialog.NewConfirm("Execute file", fmt.Sprintf("Run %s?", filepath.Base(msg.Path)), tagExecute)
+			m.dialog = &d
+			return m, nil
+		}
+		return m, executeFileCmd(msg.Path, m.activePanel().Path(), m.cfg.Behavior.PauseAfterExecute)
 
 	case panel.PreviewFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.SpaceAction)
@@ -727,6 +735,10 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 			}
 			m.activePanel().SetPath(path)
 			return m, m.activePanel().LoadDir()
+		}
+	case tagExecute:
+		if result.Confirmed {
+			return m, executeFileCmd(m.pendingExecutePath, m.activePanel().Path(), m.cfg.Behavior.PauseAfterExecute)
 		}
 	}
 	return m, nil

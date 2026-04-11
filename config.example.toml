@@ -12,6 +12,10 @@ theme = "catppuccin-mocha"
 enter_action = "edit"
 # What Space does on a file: "preview" or "edit"
 space_action = "preview"
+# Whether to ask for confirmation before executing a file.
+confirm_execute = true
+# Whether to pause and wait after execution before returning to Midday Commander.
+pause_after_execute = false
 
 # ─── Key Bindings ────────────────────────────────
 # Each binding can be a single string or a list of strings.

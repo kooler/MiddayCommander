@@ -1,9 +1,11 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -78,12 +80,40 @@ func editFileCmd(path string) tea.Cmd {
 	})
 }
 
-func executeFileCmd(path string, dir string) tea.Cmd {
+func executeFileCmd(path string, dir string, pause bool) tea.Cmd {
+	if pause {
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "bash"
+		}
+		c := pauseExecutionCmd(shell, path)
+		c.Dir = dir
+		return tea.ExecProcess(c, func(err error) tea.Msg {
+			return externalDoneMsg{err: err}
+		})
+	}
+
 	c := exec.Command(path)
 	c.Dir = dir
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return externalDoneMsg{err: err}
 	})
+}
+
+func pauseExecutionCmd(shellPath, path string) *exec.Cmd {
+	escapedPath := shellQuote(path)
+	shellName := filepath.Base(shellPath)
+	if shellName == "bash" || shellName == "zsh" {
+		script := fmt.Sprintf("status=0; %s || status=$?; printf '\nPress any key to continue...'; read -n1 -s; exit $status", escapedPath)
+		return exec.Command(shellPath, "-lc", script)
+	}
+
+	script := fmt.Sprintf("status=0; %s || status=$?; printf '\nPress enter to continue...'; read -r; exit $status", escapedPath)
+	return exec.Command(shellPath, "-c", script)
+}
+
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
 }
 
 func startTerminalCmd(dir string) tea.Cmd {

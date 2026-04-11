@@ -24,6 +24,10 @@ type BehaviorConfig struct {
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
+	// Whether to ask for confirmation before executing a file.
+	ConfirmExecute *bool `toml:"confirm_execute"`
+	// Whether to pause and wait after execution before returning to Midday Commander.
+	PauseAfterExecute bool `toml:"pause_after_execute"`
 }
 
 // KeyBindings defines all configurable key bindings.
@@ -85,14 +89,20 @@ func (s *StringOrList) UnmarshalTOML(data any) error {
 }
 
 // Default returns a config with all defaults.
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func Default() Config {
 	keys := DefaultKeyBindings()
 	normalizeAllKeys(&keys)
 	return Config{
 		Theme: "",
 		Behavior: BehaviorConfig{
-			EnterAction: "edit",
-			SpaceAction: "preview",
+			EnterAction:       "edit",
+			SpaceAction:       "preview",
+			ConfirmExecute:    boolPtr(true),
+			PauseAfterExecute: false,
 		},
 		Keys: keys,
 	}
@@ -159,6 +169,10 @@ func Load() Config {
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
 	}
+	if fileCfg.Behavior.ConfirmExecute != nil {
+		cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
+	}
+	cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
