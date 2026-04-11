@@ -62,10 +62,10 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo        StringOrList `toml:"goto"`
-	FuzzyFind   StringOrList `toml:"fuzzy_find"`
-	Bookmarks   StringOrList `toml:"bookmarks"`
-	Help        StringOrList `toml:"help"`
+	GoTo         StringOrList `toml:"goto"`
+	FuzzyFind    StringOrList `toml:"fuzzy_find"`
+	Bookmarks    StringOrList `toml:"bookmarks"`
+	Help         StringOrList `toml:"help"`
 	ThemePicker  StringOrList `toml:"theme_picker"`
 	CmdExec      StringOrList `toml:"cmd_exec"`
 	Terminal     StringOrList `toml:"terminal"`
@@ -137,13 +137,13 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:        StringOrList{"ctrl+g"},
-		FuzzyFind:   StringOrList{"f9", "ctrl+p"},
-		Bookmarks:   StringOrList{"f2", "ctrl+b"},
-		Help:        StringOrList{"f1"},
-		ThemePicker: StringOrList{"ctrl+t"},
-		CmdExec:     StringOrList{"ctrl+r"},
-		Terminal:    StringOrList{"ctrl+o"},
+		GoTo:         StringOrList{"ctrl+g"},
+		FuzzyFind:    StringOrList{"f9", "ctrl+p"},
+		Bookmarks:    StringOrList{"f2", "ctrl+b"},
+		Help:         StringOrList{"f1"},
+		ThemePicker:  StringOrList{"ctrl+t"},
+		CmdExec:      StringOrList{"ctrl+r"},
+		Terminal:     StringOrList{"ctrl+o"},
 		ToggleHidden: StringOrList{"ctrl+h"},
 	}
 }
