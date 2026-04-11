@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -57,22 +58,20 @@ func renameCmd(oldPath, newName string) tea.Cmd {
 }
 
 func viewFileCmd(path string) tea.Cmd {
-	pager := os.Getenv("PAGER")
-	if pager == "" {
-		pager = "less"
-	}
-	c := exec.Command(pager, path)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return externalDoneMsg{err: err}
-	})
+	return externalCmd("PAGER", "less", path)
 }
 
 func editFileCmd(path string) tea.Cmd {
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
+	return externalCmd("EDITOR", "vi", path)
+}
+
+func externalCmd(envVar, fallback, path string) tea.Cmd {
+	cmd := strings.TrimSpace(os.Getenv(envVar))
+	if cmd == "" {
+		cmd = fallback
 	}
-	c := exec.Command(editor, path)
+	parts := strings.Fields(cmd)
+	c := exec.Command(parts[0], append(parts[1:], path)...)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return externalDoneMsg{err: err}
 	})
