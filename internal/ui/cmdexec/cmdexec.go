@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -383,16 +382,6 @@ func (m Model) completeCurrentWord() Model {
 	return m
 }
 
-func clamp(pos, length int) int {
-	if pos < 0 {
-		return 0
-	}
-	if pos > length {
-		return length
-	}
-	return pos
-}
-
 func (m Model) updateSuggestions() Model {
 	_, _, prefix := completion.CurrentWord(m.input, m.inputPos)
 	if prefix == "" {
@@ -414,23 +403,6 @@ func mergeCompletion(candidate, suffix string) string {
 		}
 	}
 	return candidate + suffix
-}
-
-func currentWord(input string, pos int) (int, int, string) {
-	if pos > len(input) {
-		pos = len(input)
-	}
-	start := strings.LastIndexFunc(input[:pos], unicode.IsSpace)
-	if start == -1 {
-		start = 0
-	} else {
-		start++
-	}
-	end := pos
-	for end < len(input) && !unicode.IsSpace(rune(input[end])) {
-		end++
-	}
-	return start, end, input[start:end]
 }
 
 func completeCandidates(prefix, dir string, execOnly bool) []string {
@@ -457,14 +429,6 @@ func completeCandidates(prefix, dir string, execOnly bool) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func commonPrefix(strs []string) string {
-	return completion.CommonPrefix(strs)
-}
-
-func truncOrPad(s string, width int) string {
-	return completion.PadOrTrim(s, width)
 }
 
 func formatSuggestions(suggestions []string, width, maxLines int) []string {
