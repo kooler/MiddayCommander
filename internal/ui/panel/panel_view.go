@@ -71,7 +71,11 @@ func (m Model) View(th theme.Theme) string {
 		if m.entries != nil && !isRootPath(m.path) {
 			count-- // exclude ".."
 		}
-		footerText = fmt.Sprintf(" %d files ", count)
+		if m.showHidden {
+			footerText = fmt.Sprintf(" %d files ", count)
+		} else {
+			footerText = fmt.Sprintf(" %d files [.hidden] ", count)
+		}
 	}
 	footerLine := borderStyle.Render("└") +
 		headerStyle.Render(truncOrPad(footerText, innerWidth)) +
@@ -91,7 +95,7 @@ func (m Model) renderRow(idx, width int, th theme.Theme) string {
 
 	name := entry.Name()
 	isDir := entry.IsDir()
-	isCursor := idx == m.cursor
+	isCursor := idx == m.cursor && m.active
 	isSelected := m.selected[idx]
 
 	// Determine columns: name, size, time

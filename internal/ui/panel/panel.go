@@ -30,18 +30,19 @@ type KeyMap struct {
 
 // Model represents a single file panel.
 type Model struct {
-	fs       vfs.FS
-	path     string        // absolute path of current directory
-	entries  []fs.DirEntry // directory contents (sorted)
-	infos    []fs.FileInfo // cached FileInfo for each entry
-	cursor   int           // highlighted entry index
-	offset   int           // scroll offset for viewport
-	selected map[int]bool  // tagged/selected entries
-	sortMode SortMode
-	width    int
-	height   int // height available for file list rows
-	active   bool
-	err      error
+	fs         vfs.FS
+	path       string        // absolute path of current directory
+	entries    []fs.DirEntry // directory contents (sorted)
+	infos      []fs.FileInfo // cached FileInfo for each entry
+	cursor     int           // highlighted entry index
+	offset     int           // scroll offset for viewport
+	selected   map[int]bool  // tagged/selected entries
+	sortMode   SortMode
+	showHidden bool // whether to show dotfiles
+	width      int
+	height     int // height available for file list rows
+	active     bool
+	err        error
 
 	cfg config.Config // application config
 
@@ -62,13 +63,24 @@ type Model struct {
 // New creates a new panel browsing the given directory.
 func New(filesystem vfs.FS, path string, km KeyMap, cfg config.Config) Model {
 	return Model{
-		fs:       filesystem,
-		path:     path,
-		selected: make(map[int]bool),
-		sortMode: SortByName,
-		keyMap:   km,
-		cfg:      cfg,
+		fs:         filesystem,
+		path:       path,
+		selected:   make(map[int]bool),
+		sortMode:   SortByName,
+		showHidden: true,
+		keyMap:     km,
+		cfg:        cfg,
 	}
+}
+
+// ToggleHidden flips whether dotfiles are shown.
+func (m *Model) ToggleHidden() {
+	m.showHidden = !m.showHidden
+}
+
+// ShowHidden returns the current hidden-file visibility state.
+func (m Model) ShowHidden() bool {
+	return m.showHidden
 }
 
 // Path returns the current directory path.
@@ -206,7 +218,12 @@ func (m *Model) HandleDirLoaded(msg DirLoadedMsg) {
 	if !isRootPath(m.path) {
 		all = append(all, parentEntry{})
 	}
-	all = append(all, msg.Entries...)
+	for _, e := range msg.Entries {
+		if !m.showHidden && strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		all = append(all, e)
+	}
 
 	SortEntries(all, m.sortMode)
 	m.entries = all

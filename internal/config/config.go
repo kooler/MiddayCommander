@@ -66,9 +66,10 @@ type KeyBindings struct {
 	FuzzyFind   StringOrList `toml:"fuzzy_find"`
 	Bookmarks   StringOrList `toml:"bookmarks"`
 	Help        StringOrList `toml:"help"`
-	ThemePicker StringOrList `toml:"theme_picker"`
-	CmdExec     StringOrList `toml:"cmd_exec"`
-	Terminal    StringOrList `toml:"terminal"`
+	ThemePicker  StringOrList `toml:"theme_picker"`
+	CmdExec      StringOrList `toml:"cmd_exec"`
+	Terminal     StringOrList `toml:"terminal"`
+	ToggleHidden StringOrList `toml:"toggle_hidden"`
 }
 
 // StringOrList can unmarshal from either a single string or a list of strings.
@@ -141,7 +142,10 @@ func DefaultKeyBindings() KeyBindings {
 		Bookmarks:   StringOrList{"f2", "ctrl+b"},
 		Help:        StringOrList{"f1"},
 		ThemePicker: StringOrList{"ctrl+t"},
-		CmdExec:     StringOrList{"ctrl+r"}, Terminal: StringOrList{"ctrl+o"}}
+		CmdExec:     StringOrList{"ctrl+r"},
+		Terminal:    StringOrList{"ctrl+o"},
+		ToggleHidden: StringOrList{"ctrl+h"},
+	}
 }
 
 // Load reads config from ~/.config/mdc/config.toml, merging with defaults.
@@ -209,6 +213,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.ThemePicker, src.ThemePicker)
 	mergeKey(&dst.CmdExec, src.CmdExec)
 	mergeKey(&dst.Terminal, src.Terminal)
+	mergeKey(&dst.ToggleHidden, src.ToggleHidden)
 }
 
 func mergeKey(dst *StringOrList, src StringOrList) {
@@ -266,6 +271,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.ThemePicker)
 	normalizeSlice(&kb.CmdExec)
 	normalizeSlice(&kb.Terminal)
+	normalizeSlice(&kb.ToggleHidden)
 }
 
 // SaveTheme writes the theme name to the config file, preserving other settings.
