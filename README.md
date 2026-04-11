@@ -99,7 +99,7 @@ The left panel opens in the current directory, the right panel in your home dire
 | `Tab` | Switch active panel |
 | `Ctrl-U` | Swap panels |
 | `Ctrl-G` | Go to path (with directory autocomplete) |
-| `Ctrl-R` | Execute command (with path/command autocomplete) |
+| `Ctrl-R` | Execute command (with path/command autocomplete; inside overlay, `Ctrl+E` toggles exec-only mode) |
 | `Ctrl-P` | Fuzzy finder |
 | `Ctrl-B` | Bookmarks |
 | `Ctrl-T` | Theme picker (live preview) |

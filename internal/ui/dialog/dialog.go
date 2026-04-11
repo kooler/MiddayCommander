@@ -9,6 +9,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/ui/completion"
+
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
@@ -84,23 +86,6 @@ func NewInputWithBase(title, message, defaultValue, tag, basePath string) Model 
 	}
 }
 
-func expandTilde(path string) string {
-	if !strings.HasPrefix(path, "~") {
-		return path
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return path
-	}
-	if path == "~" {
-		return home
-	}
-	if strings.HasPrefix(path, "~/") {
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}
-
 func completeDialogPathCandidates(prefix, dir string) []string {
 	if prefix == "~" {
 		return []string{"~/"}
@@ -113,7 +98,7 @@ func completeDialogPathCandidates(prefix, dir string) []string {
 
 	expandedRawDir := rawDir
 	if strings.Contains(rawDir, "~") {
-		expandedRawDir = expandTilde(rawDir)
+		expandedRawDir = completion.ExpandTilde(rawDir)
 	}
 
 	scanDir := expandedRawDir
@@ -311,18 +296,14 @@ func (m *Model) updateInput(msg tea.KeyMsg) tea.Cmd {
 		if m.inputPos > 0 {
 			m.inputPos--
 		}
-		m.updateSuggestions()
 	case "right":
 		if m.inputPos < len(m.input) {
 			m.inputPos++
 		}
-		m.updateSuggestions()
 	case "home":
 		m.inputPos = 0
-		m.updateSuggestions()
 	case "end":
 		m.inputPos = len(m.input)
-		m.updateSuggestions()
 	default:
 		if len(msg.String()) == 1 && msg.String()[0] >= 32 {
 			m.input = m.input[:m.inputPos] + msg.String() + m.input[m.inputPos:]
@@ -338,7 +319,7 @@ func (m *Model) updateSuggestions() {
 		m.suggestions = nil
 		return
 	}
-	m.suggestions = completeDialogPathCandidates(m.input, m.basePath)
+	m.suggestions = completion.CompletePathCandidates(m.input, m.basePath, true)
 }
 
 func (m *Model) completeGoToPath() {
