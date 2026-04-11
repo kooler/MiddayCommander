@@ -1,0 +1,63 @@
+name = "Rose Pine Moon"
+
+[palette]
+base      = "#232136"
+surface   = "#2a273f"
+overlay   = "#393552"
+muted     = "#6e6a86"
+subtle    = "#908caa"
+text      = "#e0def4"
+love      = "#eb6f92"
+gold      = "#f6c177"
+rose      = "#ea9a97"
+pine      = "#3e8fb0"
+foam      = "#9ccfd8"
+iris      = "#c4a7e7"
+blue      = "#89b4fa"
+highlight_low         = "#2a283e"
+highlight_medium      = "#44415a"
+hightlight_high       = "#56526e"
+
+# ─── File Panels ─────────────────────────────────
+[panel]
+border_fg        = "pine"
+border_bg        = "base"
+border_active_fg = "rose"
+border_active_bg = "base"
+header_fg        = "pine"
+header_bg        = "base"
+header_active_fg = "rose"
+header_active_bg = "base"
+
+[panel.file]
+normal_fg        = "text"
+normal_bg        = "base"
+dir_fg           = "foam"
+dir_bg           = "base"
+dir_bold         = true
+exec_fg          = "gold"
+exec_bg          = "base"
+symlink_fg       = "iris"
+symlink_bg       = "base"
+cursor_fg        = "love"
+cursor_bg        = "hightlight_high"
+cursor_dir_fg    = "love"
+cursor_dir_bg    = "hightlight_high"
+cursor_dir_bold  = true
+selected_fg      = "gold"
+selected_bg      = "surface"
+selected_bold    = true
+
+# ─── Status Bar ──────────────────────────────────
+[statusbar]
+fg = "text"
+bg = "overlay"
+
+# ─── Menu / F-Key Hints ─────────────────────────
+[menubar]
+fg            = "text"
+bg            = "overlay"
+fkey_hint_fg  = "text"
+fkey_hint_bg  = "hightlight_high"
+fkey_label_fg = "text"
+fkey_label_bg = "overlay"
