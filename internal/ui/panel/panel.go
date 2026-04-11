@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/vfs"
 	"github.com/kooler/MiddayCommander/internal/vfs/archive"
 )
@@ -43,6 +44,8 @@ type Model struct {
 	active     bool
 	err        error
 
+	cfg config.Config // application config
+
 	// Quick search state
 	searching   bool
 	searchQuery string
@@ -58,7 +61,7 @@ type Model struct {
 }
 
 // New creates a new panel browsing the given directory.
-func New(filesystem vfs.FS, path string, km KeyMap) Model {
+func New(filesystem vfs.FS, path string, km KeyMap, cfg config.Config) Model {
 	return Model{
 		fs:         filesystem,
 		path:       path,
@@ -66,6 +69,7 @@ func New(filesystem vfs.FS, path string, km KeyMap) Model {
 		sortMode:   SortByName,
 		showHidden: true,
 		keyMap:     km,
+		cfg:        cfg,
 	}
 }
 
@@ -398,8 +402,12 @@ func (m *Model) handleEnter() tea.Cmd {
 		}
 	}
 
-	// Enter on file = open for edit
+	// Enter on file
 	path := m.CurrentPath()
+	info := m.CurrentInfo()
+	if info != nil && isExecutable(info.Mode()) && m.cfg.Behavior.EnterAction == "execute" {
+		return func() tea.Msg { return ExecuteFileMsg{Path: path} }
+	}
 	return func() tea.Msg { return OpenFileMsg{Path: path} }
 }
 
@@ -516,6 +524,11 @@ type RestoreCursorMsg struct {
 
 // OpenFileMsg is sent when the user wants to open a file (Enter on file).
 type OpenFileMsg struct {
+	Path string
+}
+
+// ExecuteFileMsg is sent when the user wants to execute a file (Enter on executable file).
+type ExecuteFileMsg struct {
 	Path string
 }
 

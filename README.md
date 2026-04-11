@@ -28,6 +28,8 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
 - **Quick search** - start typing to jump to matching files instantly
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
+- **Execute files** - run executable files directly with Enter (configurable)
+- **Terminal access** - open shell in current directory with Ctrl+O
 - **Mouse support** - clickable menu bar and panel interaction
 - **Go to path** - quickly jump to any directory with `~` expansion
 - **Single binary** - no runtime dependencies
@@ -161,10 +163,14 @@ cp config.example.toml ~/.config/mdc/config.toml
 theme = "catppuccin-mocha"
 
 [behavior]
-# What Enter does on a file: "edit" or "preview"
+# What Enter does on a file: "edit", "preview", or "execute"
 enter_action = "edit"
 # What Space does on a file: "preview" or "edit"
 space_action = "preview"
+# Whether to ask for confirmation before executing a file.
+confirm_execute = true
+# Whether to pause and wait after execution before returning to Midday Commander.
+pause_after_execute = false
 
 [keys]
 quit          = ["f10", "ctrl+c"]
@@ -177,6 +183,7 @@ fuzzy_find    = ["f9", "ctrl+p"]
 bookmarks     = ["f2", "ctrl+b"]
 help          = "f1"
 goto          = "ctrl+g"
+terminal      = "ctrl+o"
 # ... all keys are configurable
 ```
 

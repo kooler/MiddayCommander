@@ -20,10 +20,14 @@ type Config struct {
 
 // BehaviorConfig controls configurable behaviors.
 type BehaviorConfig struct {
-	// What Enter does on a file: "edit" (default) or "preview"
+	// What Enter does on a file: "edit" (default), "preview", or "execute"
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
+	// Whether to ask for confirmation before executing a file.
+	ConfirmExecute *bool `toml:"confirm_execute"`
+	// Whether to pause and wait after execution before returning to Midday Commander.
+	PauseAfterExecute bool `toml:"pause_after_execute"`
 }
 
 // KeyBindings defines all configurable key bindings.
@@ -58,12 +62,13 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo       StringOrList `toml:"goto"`
-	FuzzyFind  StringOrList `toml:"fuzzy_find"`
-	Bookmarks  StringOrList `toml:"bookmarks"`
-	Help        StringOrList `toml:"help"`
+	GoTo         StringOrList `toml:"goto"`
+	FuzzyFind    StringOrList `toml:"fuzzy_find"`
+	Bookmarks    StringOrList `toml:"bookmarks"`
+	Help         StringOrList `toml:"help"`
 	ThemePicker  StringOrList `toml:"theme_picker"`
 	CmdExec      StringOrList `toml:"cmd_exec"`
+	Terminal     StringOrList `toml:"terminal"`
 	ToggleHidden StringOrList `toml:"toggle_hidden"`
 }
 
@@ -85,14 +90,20 @@ func (s *StringOrList) UnmarshalTOML(data any) error {
 }
 
 // Default returns a config with all defaults.
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func Default() Config {
 	keys := DefaultKeyBindings()
 	normalizeAllKeys(&keys)
 	return Config{
 		Theme: "",
 		Behavior: BehaviorConfig{
-			EnterAction: "edit",
-			SpaceAction: "preview",
+			EnterAction:       "edit",
+			SpaceAction:       "preview",
+			ConfirmExecute:    boolPtr(true),
+			PauseAfterExecute: false,
 		},
 		Keys: keys,
 	}
@@ -126,12 +137,13 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:      StringOrList{"ctrl+g"},
-		FuzzyFind: StringOrList{"f9", "ctrl+p"},
-		Bookmarks: StringOrList{"f2", "ctrl+b"},
-		Help:        StringOrList{"f1"},
+		GoTo:         StringOrList{"ctrl+g"},
+		FuzzyFind:    StringOrList{"f9", "ctrl+p"},
+		Bookmarks:    StringOrList{"f2", "ctrl+b"},
+		Help:         StringOrList{"f1"},
 		ThemePicker:  StringOrList{"ctrl+t"},
 		CmdExec:      StringOrList{"ctrl+r"},
+		Terminal:     StringOrList{"ctrl+o"},
 		ToggleHidden: StringOrList{"ctrl+h"},
 	}
 }
@@ -161,6 +173,10 @@ func Load() Config {
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
 	}
+	if fileCfg.Behavior.ConfirmExecute != nil {
+		cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
+	}
+	cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
@@ -196,6 +212,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Help, src.Help)
 	mergeKey(&dst.ThemePicker, src.ThemePicker)
 	mergeKey(&dst.CmdExec, src.CmdExec)
+	mergeKey(&dst.Terminal, src.Terminal)
 	mergeKey(&dst.ToggleHidden, src.ToggleHidden)
 }
 
@@ -253,6 +270,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.Help)
 	normalizeSlice(&kb.ThemePicker)
 	normalizeSlice(&kb.CmdExec)
+	normalizeSlice(&kb.Terminal)
 	normalizeSlice(&kb.ToggleHidden)
 }
 

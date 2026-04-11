@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,6 +76,96 @@ func externalCmd(envVar, fallback, path string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return externalDoneMsg{err: err}
 	})
+}
+
+func executeFileCmd(path string, dir string, pause bool) tea.Cmd {
+	if pause {
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "bash"
+		}
+		c := pauseExecutionCmd(shell, path)
+		c.Dir = dir
+		return tea.ExecProcess(c, func(err error) tea.Msg {
+			return externalDoneMsg{err: err}
+		})
+	}
+
+	c := exec.Command(path)
+	c.Dir = dir
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return externalDoneMsg{err: err}
+	})
+}
+
+func pauseExecutionCmd(shellPath, path string) *exec.Cmd {
+	escapedPath := shellQuote(path)
+	shellName := filepath.Base(shellPath)
+	if shellName == "bash" || shellName == "zsh" {
+		script := fmt.Sprintf("status=0; %s || status=$?; printf '\nPress any key to continue...'; read -n1 -s; exit $status", escapedPath)
+		return exec.Command(shellPath, "-lc", script)
+	}
+
+	script := fmt.Sprintf("status=0; %s || status=$?; printf '\nPress enter to continue...'; read -r; exit $status", escapedPath)
+	return exec.Command(shellPath, "-c", script)
+}
+
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
+}
+
+func startTerminalCmd(dir string) tea.Cmd {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		shell = "bash"
+	}
+	c := interactiveShellCmd(shell)
+	c.Dir = dir
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		return externalDoneMsg{err: err}
+	})
+}
+
+func interactiveShellCmd(shellPath string) *exec.Cmd {
+	name := filepath.Base(shellPath)
+	switch name {
+	case "bash":
+		if rcFile, err := writeBashRc(); err == nil {
+			return exec.Command(shellPath, "--rcfile", rcFile, "-i")
+		}
+	case "zsh":
+		if dir, err := writeZshDir(); err == nil {
+			cmd := exec.Command(shellPath, "-i")
+			cmd.Env = append(os.Environ(), "ZDOTDIR="+dir)
+			return cmd
+		}
+	}
+	return exec.Command(shellPath, "-i")
+}
+
+func writeBashRc() (string, error) {
+	f, err := os.CreateTemp("", "mdc-terminal-*.bashrc")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	_, err = f.WriteString(`bind '"\C-o": "\C-d"'` + "\n")
+	if err != nil {
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+func writeZshDir() (string, error) {
+	dir, err := os.MkdirTemp("", "mdc-terminal-*")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, ".zshrc")
+	if err := os.WriteFile(path, []byte("bindkey '^O' exit\n"), 0o600); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // refreshBothPanels returns commands to reload both panels.
