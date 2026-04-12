@@ -1,9 +1,6 @@
 package dialog
 
 import (
-	"os"
-	"path/filepath"
-	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -84,125 +81,6 @@ func NewInputWithBase(title, message, defaultValue, tag, basePath string) Model 
 		basePath: basePath,
 		width:    50,
 	}
-}
-
-func completeDialogPathCandidates(prefix, dir string) []string {
-	if prefix == "~" {
-		return []string{"~/"}
-	}
-
-	rawDir, base := filepath.Split(prefix)
-	if rawDir == "" {
-		rawDir = "."
-	}
-
-	expandedRawDir := rawDir
-	if strings.Contains(rawDir, "~") {
-		expandedRawDir = completion.ExpandTilde(rawDir)
-	}
-
-	scanDir := expandedRawDir
-	if !filepath.IsAbs(expandedRawDir) && expandedRawDir != "." {
-		scanDir = filepath.Join(dir, expandedRawDir)
-	}
-
-	entries, err := os.ReadDir(scanDir)
-	if err != nil {
-		return nil
-	}
-
-	var candidates []string
-	for _, entry := range entries {
-		// Only show directories for GoTo dialog
-		if !entry.IsDir() {
-			continue
-		}
-		if base != "" && !strings.HasPrefix(entry.Name(), base) {
-			continue
-		}
-		candidate := filepath.Join(rawDir, entry.Name())
-		if rawDir == "." {
-			candidate = entry.Name()
-		}
-		candidate += string(os.PathSeparator)
-		candidates = append(candidates, candidate)
-	}
-	sort.Strings(candidates)
-	return candidates
-}
-
-func commonPrefix(strs []string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	prefix := strs[0]
-	for _, s := range strs[1:] {
-		for !strings.HasPrefix(s, prefix) {
-			if prefix == "" {
-				return ""
-			}
-			prefix = prefix[:len(prefix)-1]
-		}
-	}
-	return prefix
-}
-
-func formatDialogSuggestions(suggestions []string, width, maxLines int) []string {
-	if len(suggestions) == 0 {
-		return nil
-	}
-
-	var lines []string
-	currentLine := " "
-	currentWidth := 1
-
-	// Spacing between suggestions
-	itemSpacing := 2
-
-	for i, sug := range suggestions {
-		// Display basename for readability
-		displayName := filepath.Base(strings.TrimRight(sug, "/"))
-		sugWidth := lipgloss.Width(displayName)
-		neededWidth := sugWidth + itemSpacing
-		if i == 0 {
-			neededWidth = sugWidth + 1
-		}
-
-		// If adding this suggestion would exceed width, start a new line
-		if currentWidth+neededWidth > width {
-			// Pad the current line to width
-			if lipgloss.Width(currentLine) < width {
-				currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
-			}
-			lines = append(lines, currentLine)
-			if len(lines) >= maxLines {
-				break
-			}
-			currentLine = " "
-			currentWidth = 1
-		}
-
-		if len(currentLine) > 1 {
-			currentLine += "  "
-			currentWidth += 2
-		}
-		currentLine += displayName
-		currentWidth += sugWidth
-
-		if len(lines) >= maxLines {
-			break
-		}
-	}
-
-	// Add the last line if there's content
-	if len(currentLine) > 1 && len(lines) < maxLines {
-		if lipgloss.Width(currentLine) < width {
-			currentLine += strings.Repeat(" ", width-lipgloss.Width(currentLine))
-		}
-		lines = append(lines, currentLine)
-	}
-
-	return lines
 }
 
 // NewError creates an error display dialog.
@@ -323,12 +201,12 @@ func (m *Model) updateSuggestions() {
 }
 
 func (m *Model) completeGoToPath() {
-	candidates := completeDialogPathCandidates(m.input, m.basePath)
+	candidates := completion.CompletePathCandidates(m.input, m.basePath, true)
 	m.suggestions = candidates
 	if len(candidates) == 0 {
 		return
 	}
-	common := commonPrefix(candidates)
+	common := completion.CommonPrefix(candidates)
 	if len(common) > len(m.input) {
 		m.input = common
 	}
@@ -367,7 +245,7 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 		msgLines = 1 // label + input on one line
 		if len(m.suggestions) > 0 && m.tag == "goto" {
 			// For GoTo, format suggestions compactly (multiple per line)
-			formatted := formatDialogSuggestions(m.suggestions, innerW-2, 6)
+			formatted := completion.FormatSuggestions(m.suggestions, innerW-2, 6, true)
 			msgLines += len(formatted)
 		}
 	} else {
@@ -462,9 +340,9 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 
 		if m.kind == KindInput && len(m.suggestions) > 0 && m.tag == "goto" {
 			// Format suggestions compactly (multiple per line) like Ctrl+R
-			formatted := formatDialogSuggestions(m.suggestions, innerW-2, 6)
+			formatted := completion.FormatSuggestions(m.suggestions, innerW-2, 6, true)
 			for _, suggLine := range formatted {
-				sugLine := padOrTrim(suggLine, innerW-1)
+				sugLine := completion.PadOrTrim(suggLine, innerW-1)
 				contentLines = append(contentLines, bgStyle.Render(" "+sugLine))
 			}
 		}
@@ -535,16 +413,6 @@ func padRight(s string, width int) string {
 		return s[:width]
 	}
 	return s + strings.Repeat(" ", width-len(s))
-}
-
-func padOrTrim(s string, width int) string {
-	if lipgloss.Width(s) > width {
-		if width > 3 {
-			return s[:width-3] + "..."
-		}
-		return s[:width]
-	}
-	return s + strings.Repeat(" ", width-lipgloss.Width(s))
 }
 
 func wrapText(text string, width int) []string {
