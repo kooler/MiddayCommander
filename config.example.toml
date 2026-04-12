@@ -44,18 +44,19 @@ end           = "end"
 go_back       = "backspace"
 
 # Selection
-toggle_select = "ctrl+t"
+toggle_select = "insert"
 select_up     = "shift+up"
 select_down   = "shift+down"
 
 # Search
 quick_search  = "ctrl+s"
 
-# Go to path
+# Dialogs
 goto          = "ctrl+g"
 fuzzy_find    = ["f9", "ctrl+p"]
 bookmarks     = ["f2", "ctrl+b"]
-help          = "f1"
+help          = ["f1"]
 theme_picker  = "ctrl+t"
 cmd_exec      = "ctrl+r"
 terminal      = "ctrl+o"
+toggle_hidden = "ctrl+h"

@@ -22,6 +22,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Fuzzy finder** - recursive file search with real-time fuzzy matching
 - **Bookmarks** to quickly jump to most visited locations
 - **Configurable keybindings** - every key is remappable via `config.toml`
+- **Smart autocomplete** - path and command suggestions with `Tab` completion in Go to path and Execute command
 - **File operations** - copy, move, delete, rename, mkdir with confirmation dialogs
 - **Live theme picker** - browse and preview themes with Ctrl-T
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
@@ -99,7 +100,8 @@ The left panel opens in the current directory, the right panel in your home dire
 | `Esc Esc` | Quit (double-press) |
 | `Tab` | Switch active panel |
 | `Ctrl-U` | Swap panels |
-| `Ctrl-G` | Go to path |
+| `Ctrl-G` | Go to path (with directory autocomplete) |
+| `Ctrl-R` | Execute command (with path/command autocomplete; inside overlay, `Ctrl+E` toggles exec-only mode) |
 | `Ctrl-P` | Fuzzy finder |
 | `Ctrl-B` | Bookmarks |
 | `Ctrl-T` | Theme picker (live preview) |

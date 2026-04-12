@@ -641,7 +641,7 @@ func (m Model) startRename() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startGoTo() (tea.Model, tea.Cmd) {
-	d := dialog.NewInput("Go To", "Path:", m.activePanel().Path(), tagGoTo)
+	d := dialog.NewInputWithBase("Go To", "Path:", m.activePanel().Path(), tagGoTo, m.activePanel().Path())
 	m.dialog = &d
 	return m, nil
 }
