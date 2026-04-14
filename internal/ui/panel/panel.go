@@ -261,10 +261,10 @@ func (m *Model) Update(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, km.Down):
 		m.moveDown(1)
 	case key.Matches(msg, km.SelectUp):
-		m.selectAt(m.cursor)
+		m.toggleSelect()
 		m.moveUp(1)
 	case key.Matches(msg, km.SelectDown):
-		m.selectAt(m.cursor)
+		m.toggleSelect()
 		m.moveDown(1)
 	case key.Matches(msg, km.PageUp):
 		m.moveUp(m.height)
@@ -551,12 +551,6 @@ func (m *Model) RestoreCursor(name string) {
 func (m *Model) toggleSelect() {
 	if m.cursor >= 0 && m.cursor < len(m.entries) && m.entries[m.cursor].Name() != ".." {
 		m.selected[m.cursor] = !m.selected[m.cursor]
-	}
-}
-
-func (m *Model) selectAt(idx int) {
-	if idx >= 0 && idx < len(m.entries) && m.entries[idx].Name() != ".." {
-		m.selected[idx] = true
 	}
 }
 
