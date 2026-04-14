@@ -18,15 +18,16 @@ type DismissMsg struct{}
 
 // Model is the help overlay.
 type Model struct {
-	keys   config.KeyBindings
-	offset int
-	width  int
-	height int
+	keys    config.KeyBindings
+	version string
+	offset  int
+	width   int
+	height  int
 }
 
 // New creates a new help overlay.
-func New(keys config.KeyBindings, width, height int) Model {
-	return Model{keys: keys, width: width, height: height}
+func New(keys config.KeyBindings, version string, width, height int) Model {
+	return Model{keys: keys, version: version, width: width, height: height}
 }
 
 // BoxSize returns desired box dimensions.
@@ -153,7 +154,7 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	var contentLines []string
 
 	// App info
-	titleLine := bgStyle.Render(" Midday Commander (mdc)")
+	titleLine := bgStyle.Render(" Midday Commander (mdc) " + m.version)
 	titleWidth := lipgloss.Width(titleLine)
 	if titleWidth < innerW {
 		titleLine += bgStyle.Render(strings.Repeat(" ", innerW-titleWidth))

@@ -53,6 +53,7 @@ type Model struct {
 	keyMap     KeyMap
 	theme      theme.Theme
 	cfg        config.Config
+	version    string
 	menuItems  []menubar.Item
 	width      int
 	height     int
@@ -85,7 +86,7 @@ type Model struct {
 }
 
 // New creates a new application model.
-func New() Model {
+func New(version string) Model {
 	cfg := config.Load()
 
 	home, err := os.UserHomeDir()
@@ -121,6 +122,7 @@ func New() Model {
 		keyMap:         KeyMapFromConfig(cfg.Keys),
 		theme:          th,
 		cfg:            cfg,
+		version:        version,
 		menuItems:      menubar.DefaultItems(cfg),
 		shiftMenuItems: menubar.ShiftItems(cfg),
 		bookmarkStore:  bookmark.LoadStore(),
@@ -653,7 +655,7 @@ func (m Model) startGoTo() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startHelp() (tea.Model, tea.Cmd) {
-	h := help.New(m.cfg.Keys, m.width, m.height)
+	h := help.New(m.cfg.Keys, m.version, m.width, m.height)
 	m.help = &h
 	return m, nil
 }
