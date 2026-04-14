@@ -11,6 +11,7 @@ type KeyMap struct {
 	Quit         key.Binding
 	TogglePanel  key.Binding
 	SwapPanels   key.Binding
+	SameDir      key.Binding
 	Copy         key.Binding
 	Move         key.Binding
 	Mkdir        key.Binding
@@ -34,6 +35,7 @@ func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 		Quit:         binding(keys.Quit, "quit"),
 		TogglePanel:  binding(keys.TogglePanel, "switch panel"),
 		SwapPanels:   binding(keys.SwapPanels, "swap panels"),
+		SameDir:      binding(keys.SameDir, "same dir"),
 		Copy:         binding(keys.Copy, "copy"),
 		Move:         binding(keys.Move, "move"),
 		Mkdir:        binding(keys.Mkdir, "mkdir"),

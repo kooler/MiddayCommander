@@ -77,6 +77,7 @@ func (m Model) buildEntries() []entry {
 		{"Go to path", fmtKeys(k.GoTo)},
 		{"Switch panel", fmtKeys(k.TogglePanel)},
 		{"Swap panels", fmtKeys(k.SwapPanels)},
+		{"Same dir", fmtKeys(k.SameDir)},
 		{"", ""},
 		{"── File Operations ──", ""},
 		{"View file", fmtKeys(k.View)},

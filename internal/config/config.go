@@ -36,6 +36,7 @@ type KeyBindings struct {
 	Quit        StringOrList `toml:"quit"`
 	TogglePanel StringOrList `toml:"toggle_panel"`
 	SwapPanels  StringOrList `toml:"swap_panels"`
+	SameDir     StringOrList `toml:"same_dir"`
 	Copy        StringOrList `toml:"copy"`
 	Move        StringOrList `toml:"move"`
 	Mkdir       StringOrList `toml:"mkdir"`
@@ -115,6 +116,7 @@ func DefaultKeyBindings() KeyBindings {
 		Quit:        StringOrList{"f10", "ctrl+c"},
 		TogglePanel: StringOrList{"tab"},
 		SwapPanels:  StringOrList{"ctrl+u"},
+		SameDir:     StringOrList{"alt+i"},
 		Copy:        StringOrList{"f5"},
 		Move:        StringOrList{"f6"},
 		Mkdir:       StringOrList{"f7"},
@@ -188,6 +190,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Quit, src.Quit)
 	mergeKey(&dst.TogglePanel, src.TogglePanel)
 	mergeKey(&dst.SwapPanels, src.SwapPanels)
+	mergeKey(&dst.SameDir, src.SameDir)
 	mergeKey(&dst.Copy, src.Copy)
 	mergeKey(&dst.Move, src.Move)
 	mergeKey(&dst.Mkdir, src.Mkdir)
@@ -246,6 +249,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.Quit)
 	normalizeSlice(&kb.TogglePanel)
 	normalizeSlice(&kb.SwapPanels)
+	normalizeSlice(&kb.SameDir)
 	normalizeSlice(&kb.Copy)
 	normalizeSlice(&kb.Move)
 	normalizeSlice(&kb.Mkdir)

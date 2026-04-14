@@ -409,6 +409,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recalcLayout()
 			return m, nil
 
+		case key.Matches(msg, m.keyMap.SameDir):
+			p := m.inactivePanelModel()
+			p.SetPath(m.activePanel().Path())
+			return m, p.LoadDir()
+
 		case key.Matches(msg, m.keyMap.Copy):
 			return m.startCopy()
 
@@ -757,6 +762,13 @@ func (m *Model) activePanel() *panel.Model {
 		return &m.leftPanel
 	}
 	return &m.rightPanel
+}
+
+func (m *Model) inactivePanelModel() *panel.Model {
+	if m.focus == FocusLeft {
+		return &m.rightPanel
+	}
+	return &m.leftPanel
 }
 
 func (m *Model) toggleFocus() {

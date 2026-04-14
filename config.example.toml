@@ -26,6 +26,7 @@ pause_after_execute = false
 quit          = ["f10", "ctrl+c"]
 toggle_panel  = "tab"
 swap_panels   = "ctrl+u"
+same_dir      = "alt+i"
 copy          = "f5"
 move          = "f6"
 mkdir         = "f7"
