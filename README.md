@@ -105,6 +105,7 @@ The left panel opens in the current directory, the right panel in your home dire
 | `Ctrl-P` | Fuzzy finder |
 | `Ctrl-B` | Bookmarks |
 | `Ctrl-T` | Theme picker (live preview) |
+| `Ctrl-H` | Toggle hidden files |
 
 ### Navigation
 

@@ -95,6 +95,7 @@ func (m Model) buildEntries() []entry {
 		{"Select down", fmtKeys(k.SelectDown)},
 		{"", ""},
 		{"── Tools ──", ""},
+		{"Toggle hidden files", fmtKeys(k.ToggleHidden)},
 		{"Fuzzy find", fmtKeys(k.FuzzyFind)},
 		{"Bookmarks", fmtKeys(k.Bookmarks)},
 		{"Quick search", fmtKeys(k.QuickSearch)},
