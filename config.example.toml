@@ -16,6 +16,8 @@ space_action = "preview"
 confirm_execute = true
 # Whether to pause and wait after execution before returning to Midday Commander.
 pause_after_execute = false
+# Whether to show hidden (dot) files.
+show_hidden = true
 
 # ─── Key Bindings ────────────────────────────────
 # Each binding can be a single string or a list of strings.

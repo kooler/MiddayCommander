@@ -459,6 +459,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keyMap.ToggleHidden):
 			m.leftPanel.ToggleHidden()
 			m.rightPanel.ToggleHidden()
+			_ = config.SaveShowHidden(m.leftPanel.ShowHidden())
 			return m, m.refreshBothPanels()
 		}
 

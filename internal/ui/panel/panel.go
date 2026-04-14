@@ -67,7 +67,7 @@ func New(filesystem vfs.FS, path string, km KeyMap, cfg config.Config) Model {
 		path:       path,
 		selected:   make(map[int]bool),
 		sortMode:   SortByName,
-		showHidden: true,
+		showHidden: cfg.Behavior.ShowHidden == nil || *cfg.Behavior.ShowHidden,
 		keyMap:     km,
 		cfg:        cfg,
 	}

@@ -28,6 +28,8 @@ type BehaviorConfig struct {
 	ConfirmExecute *bool `toml:"confirm_execute"`
 	// Whether to pause and wait after execution before returning to Midday Commander.
 	PauseAfterExecute bool `toml:"pause_after_execute"`
+	// Whether to show hidden (dot) files. Default is true.
+	ShowHidden *bool `toml:"show_hidden"`
 }
 
 // KeyBindings defines all configurable key bindings.
@@ -105,6 +107,7 @@ func Default() Config {
 			SpaceAction:       "preview",
 			ConfirmExecute:    boolPtr(true),
 			PauseAfterExecute: false,
+			ShowHidden:        boolPtr(true),
 		},
 		Keys: keys,
 	}
@@ -179,6 +182,9 @@ func Load() Config {
 		cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
 	}
 	cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
+	if fileCfg.Behavior.ShowHidden != nil {
+		cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
+	}
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
@@ -308,6 +314,40 @@ func SaveTheme(name string) error {
 	} else {
 		// Prepend theme line at the top.
 		content = fmt.Sprintf("theme = %q\n", name) + content
+	}
+
+	return os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+// SaveShowHidden writes the show_hidden preference to the config file, preserving other settings.
+func SaveShowHidden(show bool) error {
+	dir := configDirPath()
+	configPath := filepath.Join(dir, "config.toml")
+
+	val := fmt.Sprintf("%t", show)
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// Config file doesn't exist — create it with a [behavior] section.
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(configPath, []byte(fmt.Sprintf("[behavior]\nshow_hidden = %s\n", val)), 0o644)
+	}
+
+	content := string(data)
+	lineRe := regexp.MustCompile(`(?m)^\s*show_hidden\s*=\s*\S+.*\n?`)
+
+	if lineRe.MatchString(content) {
+		// Replace existing line, preserving indentation.
+		captureRe := regexp.MustCompile(`(?m)^(\s*)show_hidden\s*=\s*\S+`)
+		content = captureRe.ReplaceAllString(content, fmt.Sprintf("${1}show_hidden = %s", val))
+	} else if strings.Contains(content, "[behavior]") {
+		// Insert after [behavior] header.
+		content = strings.Replace(content, "[behavior]\n", fmt.Sprintf("[behavior]\nshow_hidden = %s\n", val), 1)
+	} else {
+		// Append a new [behavior] section.
+		content += fmt.Sprintf("\n[behavior]\nshow_hidden = %s\n", val)
 	}
 
 	return os.WriteFile(configPath, []byte(content), 0o644)
