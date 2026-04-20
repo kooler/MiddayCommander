@@ -18,6 +18,8 @@ confirm_execute = true
 pause_after_execute = false
 # Whether to show hidden (dot) files.
 show_hidden = true
+# controls how F3 opens files: "pager" (default, uses $PAGER/less) or "system" (OS default app)
+view_mode = "pager"
 
 # ─── Key Bindings ────────────────────────────────
 # Each binding can be a single string or a list of strings.
