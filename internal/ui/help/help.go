@@ -18,20 +18,21 @@ type DismissMsg struct{}
 
 // Model is the help overlay.
 type Model struct {
-	keys   config.KeyBindings
-	offset int
-	width  int
-	height int
+	keys    config.KeyBindings
+	version string
+	offset  int
+	width   int
+	height  int
 }
 
 // New creates a new help overlay.
-func New(keys config.KeyBindings, width, height int) Model {
-	return Model{keys: keys, width: width, height: height}
+func New(keys config.KeyBindings, version string, width, height int) Model {
+	return Model{keys: keys, version: version, width: width, height: height}
 }
 
 // BoxSize returns desired box dimensions.
 func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
-	w := 60
+	w := 100
 	if w > screenWidth-4 {
 		w = screenWidth - 4
 	}
@@ -62,7 +63,7 @@ type entry struct {
 	keys  string
 }
 
-func (m Model) buildEntries() []entry {
+func (m Model) leftEntries() []entry {
 	k := m.keys
 	return []entry{
 		{"", ""},
@@ -77,6 +78,18 @@ func (m Model) buildEntries() []entry {
 		{"Go to path", fmtKeys(k.GoTo)},
 		{"Switch panel", fmtKeys(k.TogglePanel)},
 		{"Swap panels", fmtKeys(k.SwapPanels)},
+		{"Same dir", fmtKeys(k.SameDir)},
+		{"", ""},
+		{"── Selection ──", ""},
+		{"Toggle select", fmtKeys(k.ToggleSelect)},
+		{"Select up", fmtKeys(k.SelectUp)},
+		{"Select down", fmtKeys(k.SelectDown)},
+	}
+}
+
+func (m Model) rightEntries() []entry {
+	k := m.keys
+	return []entry{
 		{"", ""},
 		{"── File Operations ──", ""},
 		{"View file", fmtKeys(k.View)},
@@ -87,17 +100,14 @@ func (m Model) buildEntries() []entry {
 		{"Make directory", fmtKeys(k.Mkdir)},
 		{"Rename", fmtKeys(k.Rename)},
 		{"", ""},
-		{"── Selection ──", ""},
-		{"Toggle select", fmtKeys(k.ToggleSelect)},
-		{"Select up", fmtKeys(k.SelectUp)},
-		{"Select down", fmtKeys(k.SelectDown)},
-		{"", ""},
 		{"── Tools ──", ""},
+		{"Toggle hidden files", fmtKeys(k.ToggleHidden)},
 		{"Fuzzy find", fmtKeys(k.FuzzyFind)},
 		{"Bookmarks", fmtKeys(k.Bookmarks)},
 		{"Quick search", fmtKeys(k.QuickSearch)},
 		{"Theme picker", fmtKeys(k.ThemePicker)},
 		{"Run command", fmtKeys(k.CmdExec)},
+		{"Terminal", fmtKeys(k.Terminal)},
 		{"Help", fmtKeys(k.Help)},
 		{"Quit", fmtKeys(k.Quit)},
 	}
@@ -130,6 +140,43 @@ func formatKey(k string) string {
 	return k
 }
 
+// renderColumn renders a list of entries into fixed-width styled lines.
+func renderColumn(entries []entry, colW int, bgStyle, headStyle, keyStyle, dimStyle lipgloss.Style) []string {
+	var lines []string
+	for _, e := range entries {
+		if e.label == "" && e.keys == "" {
+			lines = append(lines, bgStyle.Render(strings.Repeat(" ", colW)))
+			continue
+		}
+		if e.keys == "" {
+			line := headStyle.Render(" " + e.label)
+			lineW := lipgloss.Width(line)
+			if lineW < colW {
+				line += bgStyle.Render(strings.Repeat(" ", colW-lineW))
+			}
+			lines = append(lines, line)
+			continue
+		}
+		keysStr := keyStyle.Render(e.keys)
+		keysWidth := lipgloss.Width(keysStr)
+		labelWidth := colW - keysWidth - 2
+		if labelWidth < 1 {
+			labelWidth = 1
+		}
+		label := fmt.Sprintf(" %-*s", labelWidth, e.label)
+		if len(label) > labelWidth+1 {
+			label = label[:labelWidth+1]
+		}
+		line := dimStyle.Render(label) + keysStr + bgStyle.Render(" ")
+		lineW := lipgloss.Width(line)
+		if lineW < colW {
+			line += bgStyle.Render(strings.Repeat(" ", colW-lineW))
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
 // View renders the help overlay.
 func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	boxW, boxH := m.BoxSize(screenWidth, screenHeight)
@@ -146,12 +193,10 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	keyStyle := lipgloss.NewStyle().Background(bg).Foreground(accent)
 	dimStyle := lipgloss.NewStyle().Background(bg).Foreground(subtle)
 
-	entries := m.buildEntries()
-
 	var contentLines []string
 
-	// App info
-	titleLine := bgStyle.Render(" Midday Commander (mdc)")
+	// App info (full width)
+	titleLine := bgStyle.Render(" Midday Commander (mdc) " + m.version)
 	titleWidth := lipgloss.Width(titleLine)
 	if titleWidth < innerW {
 		titleLine += bgStyle.Render(strings.Repeat(" ", innerW-titleWidth))
@@ -165,57 +210,52 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	}
 	contentLines = append(contentLines, verLine)
 
-	// Keybindings
-	maxVisible := boxH - 4 // borders(2) + footer(1) + 1 padding
-	end := m.offset + maxVisible - len(contentLines)
-	if end > len(entries) {
-		end = len(entries)
-	}
-	if m.offset > len(entries) {
-		m.offset = len(entries) - 1
+	// Two-column keybindings
+	colW := innerW / 2
+	leftCol := renderColumn(m.leftEntries(), colW, bgStyle, headStyle, keyStyle, dimStyle)
+	rightCol := renderColumn(m.rightEntries(), innerW-colW, bgStyle, headStyle, keyStyle, dimStyle)
+
+	rows := len(leftCol)
+	if len(rightCol) > rows {
+		rows = len(rightCol)
 	}
 
+	// Scrolling support for small screens
+	maxVisible := boxH - 4 // borders(2) + footer(1) + header lines
+	maxVisible -= len(contentLines)
+	if m.offset > rows-maxVisible {
+		m.offset = rows - maxVisible
+	}
+	if m.offset < 0 {
+		m.offset = 0
+	}
+	end := m.offset + maxVisible
+	if end > rows {
+		end = rows
+	}
+	scrollable := rows > maxVisible
+
+	blankLeft := bgStyle.Render(strings.Repeat(" ", colW))
+	blankRight := bgStyle.Render(strings.Repeat(" ", innerW-colW))
 	for i := m.offset; i < end; i++ {
-		e := entries[i]
-		if e.label == "" && e.keys == "" {
-			contentLines = append(contentLines, bgStyle.Render(strings.Repeat(" ", innerW)))
-			continue
+		left := blankLeft
+		right := blankRight
+		if i < len(leftCol) {
+			left = leftCol[i]
 		}
-		if e.keys == "" {
-			// Section heading
-			line := headStyle.Render(" " + e.label)
-			lineW := lipgloss.Width(line)
-			if lineW < innerW {
-				line += bgStyle.Render(strings.Repeat(" ", innerW-lineW))
-			}
-			contentLines = append(contentLines, line)
-			continue
+		if i < len(rightCol) {
+			right = rightCol[i]
 		}
-
-		// Key binding row: label right-padded, keys right-aligned
-		keysStr := keyStyle.Render(e.keys)
-		keysWidth := lipgloss.Width(keysStr)
-		labelWidth := innerW - keysWidth - 2
-		if labelWidth < 1 {
-			labelWidth = 1
-		}
-		label := fmt.Sprintf(" %-*s", labelWidth, e.label)
-		if len(label) > labelWidth+1 {
-			label = label[:labelWidth+1]
-		}
-		line := dimStyle.Render(label) + keysStr + bgStyle.Render(" ")
-		lineW := lipgloss.Width(line)
-		if lineW < innerW {
-			line += bgStyle.Render(strings.Repeat(" ", innerW-lineW))
-		}
-		contentLines = append(contentLines, line)
+		contentLines = append(contentLines, left+right)
 	}
 
 	// Footer
 	footerKeyStyle := lipgloss.NewStyle().Background(bg).Foreground(accent).Bold(true)
-	footer := footerKeyStyle.Render(" Esc") + dimStyle.Render(":Close") +
-		dimStyle.Render("  ") +
-		footerKeyStyle.Render("↑↓") + dimStyle.Render(":Scroll")
+	footer := footerKeyStyle.Render(" Esc") + dimStyle.Render(":Close")
+	if scrollable {
+		footer += dimStyle.Render("  ") +
+			footerKeyStyle.Render("↑↓") + dimStyle.Render(":Scroll")
+	}
 	footerWidth := lipgloss.Width(footer)
 	if footerWidth < innerW {
 		footer += dimStyle.Render(strings.Repeat(" ", innerW-footerWidth))

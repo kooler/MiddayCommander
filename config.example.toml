@@ -8,10 +8,16 @@ theme = "catppuccin-mocha"
 
 # ─── Behavior ────────────────────────────────────
 [behavior]
-# What Enter does on a file: "edit" or "preview"
+# What Enter does on a file: "edit", "preview", or "execute"
 enter_action = "edit"
 # What Space does on a file: "preview" or "edit"
 space_action = "preview"
+# Whether to ask for confirmation before executing a file.
+confirm_execute = true
+# Whether to pause and wait after execution before returning to Midday Commander.
+pause_after_execute = false
+# Whether to show hidden (dot) files.
+show_hidden = true
 
 # ─── Key Bindings ────────────────────────────────
 # Each binding can be a single string or a list of strings.
@@ -22,6 +28,7 @@ space_action = "preview"
 quit          = ["f10", "ctrl+c"]
 toggle_panel  = "tab"
 swap_panels   = "ctrl+u"
+same_dir      = "alt+i"
 copy          = "f5"
 move          = "f6"
 mkdir         = "f7"
@@ -40,9 +47,19 @@ end           = "end"
 go_back       = "backspace"
 
 # Selection
-toggle_select = "ctrl+t"
+toggle_select = "insert"
 select_up     = "shift+up"
 select_down   = "shift+down"
 
 # Search
 quick_search  = "ctrl+s"
+
+# Dialogs
+goto          = "ctrl+g"
+fuzzy_find    = ["f9", "ctrl+p"]
+bookmarks     = ["f2", "ctrl+b"]
+help          = ["f1"]
+theme_picker  = "ctrl+t"
+cmd_exec      = "ctrl+r"
+terminal      = "ctrl+o"
+toggle_hidden = "ctrl+h"

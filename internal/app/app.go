@@ -36,12 +36,13 @@ const (
 
 // Dialog tags identify which operation triggered the dialog.
 const (
-	tagCopy   = "copy"
-	tagMove   = "move"
-	tagDelete = "delete"
-	tagMkdir  = "mkdir"
-	tagRename = "rename"
-	tagGoTo   = "goto"
+	tagCopy    = "copy"
+	tagMove    = "move"
+	tagDelete  = "delete"
+	tagMkdir   = "mkdir"
+	tagRename  = "rename"
+	tagGoTo    = "goto"
+	tagExecute = "execute"
 )
 
 // Model is the root application model.
@@ -52,6 +53,7 @@ type Model struct {
 	keyMap     KeyMap
 	theme      theme.Theme
 	cfg        config.Config
+	version    string
 	menuItems  []menubar.Item
 	width      int
 	height     int
@@ -71,8 +73,9 @@ type Model struct {
 	bookmarkStore *bookmark.Store
 
 	// Pending operation state (saved while dialog is open)
-	pendingSources []string
-	pendingDest    string
+	pendingSources     []string
+	pendingDest        string
+	pendingExecutePath string
 
 	// Double-Esc to quit
 	lastEsc time.Time
@@ -83,7 +86,7 @@ type Model struct {
 }
 
 // New creates a new application model.
-func New() Model {
+func New(version string) Model {
 	cfg := config.Load()
 
 	home, err := os.UserHomeDir()
@@ -100,10 +103,10 @@ func New() Model {
 
 	panelKM := panelKeyMapFromConfig(cfg.Keys)
 
-	left := panel.New(lfs, cwd, panelKM)
+	left := panel.New(lfs, cwd, panelKM, cfg)
 	left.SetActive(true)
 
-	right := panel.New(lfs, home, panelKM)
+	right := panel.New(lfs, home, panelKM, cfg)
 
 	th := theme.Default()
 	if cfg.Theme != "" {
@@ -119,6 +122,7 @@ func New() Model {
 		keyMap:         KeyMapFromConfig(cfg.Keys),
 		theme:          th,
 		cfg:            cfg,
+		version:        version,
 		menuItems:      menubar.DefaultItems(cfg),
 		shiftMenuItems: menubar.ShiftItems(cfg),
 		bookmarkStore:  bookmark.LoadStore(),
@@ -252,6 +256,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// File action messages from panel (configurable behavior)
 	case panel.OpenFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.EnterAction)
+
+	case panel.ExecuteFileMsg:
+		if m.cfg.Behavior.ConfirmExecute == nil || *m.cfg.Behavior.ConfirmExecute {
+			m.pendingExecutePath = msg.Path
+			d := dialog.NewConfirm("Execute file", fmt.Sprintf("Run %s?", filepath.Base(msg.Path)), tagExecute)
+			m.dialog = &d
+			return m, nil
+		}
+		return m, executeFileCmd(msg.Path, m.activePanel().Path(), m.cfg.Behavior.PauseAfterExecute)
 
 	case panel.PreviewFileMsg:
 		return m, m.fileActionCmd(msg.Path, m.cfg.Behavior.SpaceAction)
@@ -398,6 +411,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.recalcLayout()
 			return m, nil
 
+		case key.Matches(msg, m.keyMap.SameDir):
+			p := m.inactivePanelModel()
+			p.SetPath(m.activePanel().Path())
+			return m, p.LoadDir()
+
 		case key.Matches(msg, m.keyMap.Copy):
 			return m.startCopy()
 
@@ -437,9 +455,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keyMap.CmdExec):
 			return m.startCmdExec()
 
+		case key.Matches(msg, m.keyMap.Terminal):
+			return m, startTerminalCmd(m.activePanel().Path())
+
 		case key.Matches(msg, m.keyMap.ToggleHidden):
 			m.leftPanel.ToggleHidden()
 			m.rightPanel.ToggleHidden()
+			_ = config.SaveShowHidden(m.leftPanel.ShowHidden())
 			return m, m.refreshBothPanels()
 		}
 
@@ -529,6 +551,8 @@ func (m Model) dispatchKey(raw string) (tea.Model, tea.Cmd) {
 		return m.startThemePicker()
 	case contains(cfg.CmdExec, raw):
 		return m.startCmdExec()
+	case contains(cfg.Terminal, raw):
+		return m, startTerminalCmd(m.activePanel().Path())
 	}
 	return m, nil
 }
@@ -628,13 +652,13 @@ func (m Model) startRename() (tea.Model, tea.Cmd) {
 }
 
 func (m Model) startGoTo() (tea.Model, tea.Cmd) {
-	d := dialog.NewInput("Go To", "Path:", m.activePanel().Path(), tagGoTo)
+	d := dialog.NewInputWithBase("Go To", "Path:", m.activePanel().Path(), tagGoTo, m.activePanel().Path())
 	m.dialog = &d
 	return m, nil
 }
 
 func (m Model) startHelp() (tea.Model, tea.Cmd) {
-	h := help.New(m.cfg.Keys, m.width, m.height)
+	h := help.New(m.cfg.Keys, m.version, m.width, m.height)
 	m.help = &h
 	return m, nil
 }
@@ -733,6 +757,10 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 			m.activePanel().SetPath(path)
 			return m, m.activePanel().LoadDir()
 		}
+	case tagExecute:
+		if result.Confirmed {
+			return m, executeFileCmd(m.pendingExecutePath, m.activePanel().Path(), m.cfg.Behavior.PauseAfterExecute)
+		}
 	}
 	return m, nil
 }
@@ -744,6 +772,13 @@ func (m *Model) activePanel() *panel.Model {
 		return &m.leftPanel
 	}
 	return &m.rightPanel
+}
+
+func (m *Model) inactivePanelModel() *panel.Model {
+	if m.focus == FocusLeft {
+		return &m.rightPanel
+	}
+	return &m.leftPanel
 }
 
 func (m *Model) toggleFocus() {

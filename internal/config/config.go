@@ -20,12 +20,18 @@ type Config struct {
 
 // BehaviorConfig controls configurable behaviors.
 type BehaviorConfig struct {
-	// What Enter does on a file: "edit" (default) or "preview"
+	// What Enter does on a file: "edit" (default), "preview", or "execute"
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
 	// ViewMode controls how F3 opens files: "pager" (default, uses $PAGER/less) or "system" (OS default app)
 	ViewMode string `toml:"view_mode"`
+	// Whether to ask for confirmation before executing a file.
+	ConfirmExecute *bool `toml:"confirm_execute"`
+	// Whether to pause and wait after execution before returning to Midday Commander.
+	PauseAfterExecute bool `toml:"pause_after_execute"`
+	// Whether to show hidden (dot) files. Default is true.
+	ShowHidden *bool `toml:"show_hidden"`
 }
 
 // KeyBindings defines all configurable key bindings.
@@ -34,6 +40,7 @@ type KeyBindings struct {
 	Quit        StringOrList `toml:"quit"`
 	TogglePanel StringOrList `toml:"toggle_panel"`
 	SwapPanels  StringOrList `toml:"swap_panels"`
+	SameDir     StringOrList `toml:"same_dir"`
 	Copy        StringOrList `toml:"copy"`
 	Move        StringOrList `toml:"move"`
 	Mkdir       StringOrList `toml:"mkdir"`
@@ -60,12 +67,13 @@ type KeyBindings struct {
 	QuickSearch StringOrList `toml:"quick_search"`
 
 	// Go to path
-	GoTo       StringOrList `toml:"goto"`
-	FuzzyFind  StringOrList `toml:"fuzzy_find"`
-	Bookmarks  StringOrList `toml:"bookmarks"`
-	Help        StringOrList `toml:"help"`
+	GoTo         StringOrList `toml:"goto"`
+	FuzzyFind    StringOrList `toml:"fuzzy_find"`
+	Bookmarks    StringOrList `toml:"bookmarks"`
+	Help         StringOrList `toml:"help"`
 	ThemePicker  StringOrList `toml:"theme_picker"`
 	CmdExec      StringOrList `toml:"cmd_exec"`
+	Terminal     StringOrList `toml:"terminal"`
 	ToggleHidden StringOrList `toml:"toggle_hidden"`
 }
 
@@ -87,6 +95,10 @@ func (s *StringOrList) UnmarshalTOML(data any) error {
 }
 
 // Default returns a config with all defaults.
+func boolPtr(v bool) *bool {
+	return &v
+}
+
 func Default() Config {
 	keys := DefaultKeyBindings()
 	normalizeAllKeys(&keys)
@@ -96,6 +108,9 @@ func Default() Config {
 			EnterAction: "edit",
 			SpaceAction: "preview",
 			ViewMode:    "pager",
+      ConfirmExecute:    boolPtr(true),
+			PauseAfterExecute: false,
+			ShowHidden:        boolPtr(true),
 		},
 		Keys: keys,
 	}
@@ -107,6 +122,7 @@ func DefaultKeyBindings() KeyBindings {
 		Quit:        StringOrList{"f10", "ctrl+c"},
 		TogglePanel: StringOrList{"tab"},
 		SwapPanels:  StringOrList{"ctrl+u"},
+		SameDir:     StringOrList{"alt+i"},
 		Copy:        StringOrList{"f5"},
 		Move:        StringOrList{"f6"},
 		Mkdir:       StringOrList{"f7"},
@@ -129,12 +145,13 @@ func DefaultKeyBindings() KeyBindings {
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
-		GoTo:      StringOrList{"ctrl+g"},
-		FuzzyFind: StringOrList{"f9", "ctrl+p"},
-		Bookmarks: StringOrList{"f2", "ctrl+b"},
-		Help:        StringOrList{"f1"},
+		GoTo:         StringOrList{"ctrl+g"},
+		FuzzyFind:    StringOrList{"f9", "ctrl+p"},
+		Bookmarks:    StringOrList{"f2", "ctrl+b"},
+		Help:         StringOrList{"f1"},
 		ThemePicker:  StringOrList{"ctrl+t"},
 		CmdExec:      StringOrList{"ctrl+r"},
+		Terminal:     StringOrList{"ctrl+o"},
 		ToggleHidden: StringOrList{"ctrl+h"},
 	}
 }
@@ -164,9 +181,16 @@ func Load() Config {
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
 	}
-	if fileCfg.Behavior.ViewMode != "" {
-		cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
-	}
+  if fileCfg.Behavior.ViewMode != "" {
+    cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
+  }
+  if fileCfg.Behavior.ConfirmExecute != nil {
+    cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
+  }
+  cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
+  if fileCfg.Behavior.ShowHidden != nil {
+    cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
+  }
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
@@ -178,6 +202,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Quit, src.Quit)
 	mergeKey(&dst.TogglePanel, src.TogglePanel)
 	mergeKey(&dst.SwapPanels, src.SwapPanels)
+	mergeKey(&dst.SameDir, src.SameDir)
 	mergeKey(&dst.Copy, src.Copy)
 	mergeKey(&dst.Move, src.Move)
 	mergeKey(&dst.Mkdir, src.Mkdir)
@@ -202,6 +227,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Help, src.Help)
 	mergeKey(&dst.ThemePicker, src.ThemePicker)
 	mergeKey(&dst.CmdExec, src.CmdExec)
+	mergeKey(&dst.Terminal, src.Terminal)
 	mergeKey(&dst.ToggleHidden, src.ToggleHidden)
 }
 
@@ -235,6 +261,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.Quit)
 	normalizeSlice(&kb.TogglePanel)
 	normalizeSlice(&kb.SwapPanels)
+	normalizeSlice(&kb.SameDir)
 	normalizeSlice(&kb.Copy)
 	normalizeSlice(&kb.Move)
 	normalizeSlice(&kb.Mkdir)
@@ -259,6 +286,7 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.Help)
 	normalizeSlice(&kb.ThemePicker)
 	normalizeSlice(&kb.CmdExec)
+	normalizeSlice(&kb.Terminal)
 	normalizeSlice(&kb.ToggleHidden)
 }
 
@@ -292,6 +320,40 @@ func SaveTheme(name string) error {
 	} else {
 		// Prepend theme line at the top.
 		content = fmt.Sprintf("theme = %q\n", name) + content
+	}
+
+	return os.WriteFile(configPath, []byte(content), 0o644)
+}
+
+// SaveShowHidden writes the show_hidden preference to the config file, preserving other settings.
+func SaveShowHidden(show bool) error {
+	dir := configDirPath()
+	configPath := filepath.Join(dir, "config.toml")
+
+	val := fmt.Sprintf("%t", show)
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		// Config file doesn't exist — create it with a [behavior] section.
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(configPath, []byte(fmt.Sprintf("[behavior]\nshow_hidden = %s\n", val)), 0o644)
+	}
+
+	content := string(data)
+	lineRe := regexp.MustCompile(`(?m)^\s*show_hidden\s*=\s*\S+.*\n?`)
+
+	if lineRe.MatchString(content) {
+		// Replace existing line, preserving indentation.
+		captureRe := regexp.MustCompile(`(?m)^(\s*)show_hidden\s*=\s*\S+`)
+		content = captureRe.ReplaceAllString(content, fmt.Sprintf("${1}show_hidden = %s", val))
+	} else if strings.Contains(content, "[behavior]") {
+		// Insert after [behavior] header.
+		content = strings.Replace(content, "[behavior]\n", fmt.Sprintf("[behavior]\nshow_hidden = %s\n", val), 1)
+	} else {
+		// Append a new [behavior] section.
+		content += fmt.Sprintf("\n[behavior]\nshow_hidden = %s\n", val)
 	}
 
 	return os.WriteFile(configPath, []byte(content), 0o644)

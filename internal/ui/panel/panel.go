@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/vfs"
 	"github.com/kooler/MiddayCommander/internal/vfs/archive"
 )
@@ -43,6 +44,8 @@ type Model struct {
 	active     bool
 	err        error
 
+	cfg config.Config // application config
+
 	// Quick search state
 	searching   bool
 	searchQuery string
@@ -58,14 +61,15 @@ type Model struct {
 }
 
 // New creates a new panel browsing the given directory.
-func New(filesystem vfs.FS, path string, km KeyMap) Model {
+func New(filesystem vfs.FS, path string, km KeyMap, cfg config.Config) Model {
 	return Model{
 		fs:         filesystem,
 		path:       path,
 		selected:   make(map[int]bool),
 		sortMode:   SortByName,
-		showHidden: true,
+		showHidden: cfg.Behavior.ShowHidden == nil || *cfg.Behavior.ShowHidden,
 		keyMap:     km,
+		cfg:        cfg,
 	}
 }
 
@@ -257,10 +261,10 @@ func (m *Model) Update(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, km.Down):
 		m.moveDown(1)
 	case key.Matches(msg, km.SelectUp):
-		m.selectAt(m.cursor)
+		m.toggleSelect()
 		m.moveUp(1)
 	case key.Matches(msg, km.SelectDown):
-		m.selectAt(m.cursor)
+		m.toggleSelect()
 		m.moveDown(1)
 	case key.Matches(msg, km.PageUp):
 		m.moveUp(m.height)
@@ -398,8 +402,12 @@ func (m *Model) handleEnter() tea.Cmd {
 		}
 	}
 
-	// Enter on file = open for edit
+	// Enter on file
 	path := m.CurrentPath()
+	info := m.CurrentInfo()
+	if info != nil && isExecutable(info.Mode()) && m.cfg.Behavior.EnterAction == "execute" {
+		return func() tea.Msg { return ExecuteFileMsg{Path: path} }
+	}
 	return func() tea.Msg { return OpenFileMsg{Path: path} }
 }
 
@@ -519,6 +527,11 @@ type OpenFileMsg struct {
 	Path string
 }
 
+// ExecuteFileMsg is sent when the user wants to execute a file (Enter on executable file).
+type ExecuteFileMsg struct {
+	Path string
+}
+
 // PreviewFileMsg is sent when the user wants to preview a file (Space on file).
 type PreviewFileMsg struct {
 	Path string
@@ -538,12 +551,6 @@ func (m *Model) RestoreCursor(name string) {
 func (m *Model) toggleSelect() {
 	if m.cursor >= 0 && m.cursor < len(m.entries) && m.entries[m.cursor].Name() != ".." {
 		m.selected[m.cursor] = !m.selected[m.cursor]
-	}
-}
-
-func (m *Model) selectAt(idx int) {
-	if idx >= 0 && idx < len(m.entries) && m.entries[idx].Name() != ".." {
-		m.selected[idx] = true
 	}
 }
 

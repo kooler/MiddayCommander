@@ -6,6 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/ui/completion"
+
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
@@ -36,8 +38,10 @@ type Model struct {
 	tag     string // passed back in Result
 
 	// Input dialog
-	input    string
-	inputPos int
+	input       string
+	inputPos    int
+	basePath    string
+	suggestions []string
 
 	// Progress dialog
 	progress float64
@@ -63,6 +67,10 @@ func NewConfirm(title, message, tag string) Model {
 
 // NewInput creates a text input dialog.
 func NewInput(title, message, defaultValue, tag string) Model {
+	return NewInputWithBase(title, message, defaultValue, tag, "")
+}
+
+func NewInputWithBase(title, message, defaultValue, tag, basePath string) Model {
 	return Model{
 		kind:     KindInput,
 		title:    title,
@@ -70,6 +78,7 @@ func NewInput(title, message, defaultValue, tag string) Model {
 		tag:      tag,
 		input:    defaultValue,
 		inputPos: len(defaultValue),
+		basePath: basePath,
 		width:    50,
 	}
 }
@@ -146,15 +155,21 @@ func (m *Model) updateInput(msg tea.KeyMsg) tea.Cmd {
 	case "esc":
 		m.done = true
 		m.result = Result{Kind: KindInput, Confirmed: false, Tag: m.tag}
+	case "tab":
+		if m.tag == "goto" {
+			m.completeGoToPath()
+		}
 	case "backspace":
 		if m.inputPos > 0 {
 			m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 			m.inputPos--
 		}
+		m.updateSuggestions()
 	case "delete":
 		if m.inputPos < len(m.input) {
 			m.input = m.input[:m.inputPos] + m.input[m.inputPos+1:]
 		}
+		m.updateSuggestions()
 	case "left":
 		if m.inputPos > 0 {
 			m.inputPos--
@@ -171,9 +186,35 @@ func (m *Model) updateInput(msg tea.KeyMsg) tea.Cmd {
 		if len(msg.String()) == 1 && msg.String()[0] >= 32 {
 			m.input = m.input[:m.inputPos] + msg.String() + m.input[m.inputPos:]
 			m.inputPos++
+			m.updateSuggestions()
 		}
 	}
 	return nil
+}
+
+func (m *Model) updateSuggestions() {
+	if m.tag != "goto" {
+		m.suggestions = nil
+		return
+	}
+	m.suggestions = completion.CompletePathCandidates(m.input, m.basePath, true)
+}
+
+func (m *Model) completeGoToPath() {
+	candidates := completion.CompletePathCandidates(m.input, m.basePath, true)
+	m.suggestions = candidates
+	if len(candidates) == 0 {
+		return
+	}
+	common := completion.CommonPrefix(candidates)
+	if len(common) > len(m.input) {
+		m.input = common
+	}
+	if len(candidates) == 1 {
+		m.input = candidates[0]
+	}
+	m.inputPos = len(m.input)
+	m.updateSuggestions()
 }
 
 func (m *Model) updateError(msg tea.KeyMsg) tea.Cmd {
@@ -202,6 +243,11 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	var msgLines int
 	if m.kind == KindInput {
 		msgLines = 1 // label + input on one line
+		if len(m.suggestions) > 0 && m.tag == "goto" {
+			// For GoTo, format suggestions compactly (multiple per line)
+			formatted := completion.FormatSuggestions(m.suggestions, innerW-2, 6, true)
+			msgLines += len(formatted)
+		}
 	} else {
 		msgLines = len(wrapText(m.message, innerW-2))
 	}
@@ -291,6 +337,15 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			line += bgStyle.Render(strings.Repeat(" ", innerW-lineW))
 		}
 		contentLines = append(contentLines, line)
+
+		if m.kind == KindInput && len(m.suggestions) > 0 && m.tag == "goto" {
+			// Format suggestions compactly (multiple per line) like Ctrl+R
+			formatted := completion.FormatSuggestions(m.suggestions, innerW-2, 6, true)
+			for _, suggLine := range formatted {
+				sugLine := completion.PadOrTrim(suggLine, innerW-1)
+				contentLines = append(contentLines, bgStyle.Render(" "+sugLine))
+			}
+		}
 
 	default:
 		// Message on its own line(s) for non-input dialogs
