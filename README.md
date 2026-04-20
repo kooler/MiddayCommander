@@ -39,7 +39,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 ### Using Homebrew
 
 ```bash
-brew install kooler/apps/MiddayCommander
+brew install kooler/apps/middaycommander
 ```
 
 Run: `mdc`

@@ -51,7 +51,8 @@ nfpms:
       - rpm
 
 brews:
-  - repository:
+  - name: middaycommander
+    repository:
       owner: kooler
       name: homebrew-apps
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
@@ -59,6 +60,8 @@ brews:
     homepage: https://github.com/kooler/MiddayCommander
     description: "A modern dual-panel terminal file manager"
     license: MIT
+    custom_block: |
+      oldnames "MiddayCommander"
     test: |
       system "#{bin}/mdc", "--version"
     install: |
