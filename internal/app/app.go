@@ -581,6 +581,9 @@ func (m *Model) fileActionCmd(path string, action string) tea.Cmd {
 	case "edit":
 		return editFileCmd(path)
 	case "preview":
+		if m.cfg.Behavior.ViewMode == "system" {
+			return openSystemDefaultCmd(path)
+		}
 		return viewFileCmd(path)
 	default:
 		return editFileCmd(path)
@@ -699,7 +702,11 @@ func (m Model) startView() (tea.Model, tea.Cmd) {
 	if e == nil || e.IsDir() {
 		return m, nil
 	}
-	return m, viewFileCmd(m.currentFilePath())
+	path := m.currentFilePath()
+	if m.cfg.Behavior.ViewMode == "system" {
+		return m, openSystemDefaultCmd(path)
+	}
+	return m, viewFileCmd(path)
 }
 
 func (m Model) startEdit() (tea.Model, tea.Cmd) {

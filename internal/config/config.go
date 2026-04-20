@@ -24,6 +24,8 @@ type BehaviorConfig struct {
 	EnterAction string `toml:"enter_action"`
 	// What Space does on a file: "preview" (default) or "edit"
 	SpaceAction string `toml:"space_action"`
+	// ViewMode controls how F3 opens files: "pager" (default, uses $PAGER/less) or "system" (OS default app)
+	ViewMode string `toml:"view_mode"`
 	// Whether to ask for confirmation before executing a file.
 	ConfirmExecute *bool `toml:"confirm_execute"`
 	// Whether to pause and wait after execution before returning to Midday Commander.
@@ -103,9 +105,10 @@ func Default() Config {
 	return Config{
 		Theme: "",
 		Behavior: BehaviorConfig{
-			EnterAction:       "edit",
-			SpaceAction:       "preview",
-			ConfirmExecute:    boolPtr(true),
+			EnterAction: "edit",
+			SpaceAction: "preview",
+			ViewMode:    "pager",
+      ConfirmExecute:    boolPtr(true),
 			PauseAfterExecute: false,
 			ShowHidden:        boolPtr(true),
 		},
@@ -178,13 +181,16 @@ func Load() Config {
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
 	}
-	if fileCfg.Behavior.ConfirmExecute != nil {
-		cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
-	}
-	cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
-	if fileCfg.Behavior.ShowHidden != nil {
-		cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
-	}
+  if fileCfg.Behavior.ViewMode != "" {
+    cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
+  }
+  if fileCfg.Behavior.ConfirmExecute != nil {
+    cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
+  }
+  cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
+  if fileCfg.Behavior.ShowHidden != nil {
+    cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
+  }
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)

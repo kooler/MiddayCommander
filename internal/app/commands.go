@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -76,6 +77,22 @@ func externalCmd(envVar, fallback, path string) tea.Cmd {
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		return externalDoneMsg{err: err}
 	})
+}
+
+func openSystemDefaultCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		var c *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			c = exec.Command("open", path)
+		case "windows":
+			c = exec.Command("explorer", path)
+		default:
+			c = exec.Command("xdg-open", path)
+		}
+		_ = c.Start()
+		return externalDoneMsg{}
+	}
 }
 
 func executeFileCmd(path string, dir string, pause bool) tea.Cmd {
