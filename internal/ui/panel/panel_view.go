@@ -95,7 +95,7 @@ func (m Model) renderRow(idx, width int, th theme.Theme) string {
 
 	name := entry.Name()
 	isDir := entry.IsDir()
-	isCursor := idx == m.cursor
+	isCursor := idx == m.cursor && m.active
 	isSelected := m.selected[idx]
 
 	// Determine columns: name, size, time

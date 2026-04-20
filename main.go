@@ -31,7 +31,7 @@ func main() {
 	defer os.Stdout.WriteString("\x1b[<u") // disable on exit
 
 	p := tea.NewProgram(
-		app.New(),
+		app.New(version),
 		tea.WithAltScreen(),
 		tea.WithMouseAllMotion(),
 		tea.WithFilter(app.KittyFilter),

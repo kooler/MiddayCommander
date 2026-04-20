@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/ui/completion"
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
@@ -31,6 +33,8 @@ type Model struct {
 	outputOffset int
 	running      bool
 	dir          string
+	suggestions  []string
+	execOnly     bool
 	width        int
 	height       int
 }
@@ -92,19 +96,41 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.output = ""
 			m.outputLines = nil
 			m.outputOffset = 0
+			m.suggestions = nil
 			return m, runCommandCmd(m.dir, m.input)
 		}
+
+	case "tab":
+		m.output = ""
+		m.outputLines = nil
+		m.outputOffset = 0
+		return m.completeCurrentWord(), nil
+
+	case "ctrl+e":
+		m.output = ""
+		m.outputLines = nil
+		m.outputOffset = 0
+		m.execOnly = !m.execOnly
+		return m.updateSuggestions(), nil
 
 	case "backspace":
 		if m.inputPos > 0 {
 			m.input = m.input[:m.inputPos-1] + m.input[m.inputPos:]
 			m.inputPos--
 		}
+		m.output = ""
+		m.outputLines = nil
+		m.outputOffset = 0
+		m = m.updateSuggestions()
 
 	case "delete":
 		if m.inputPos < len(m.input) {
 			m.input = m.input[:m.inputPos] + m.input[m.inputPos+1:]
 		}
+		m.output = ""
+		m.outputLines = nil
+		m.outputOffset = 0
+		m = m.updateSuggestions()
 
 	case "left":
 		if m.inputPos > 0 {
@@ -155,8 +181,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	default:
 		s := msg.String()
 		if len(s) == 1 && s[0] >= 32 {
+			if m.inputPos < 0 {
+				m.inputPos = 0
+			} else if m.inputPos > len(m.input) {
+				m.inputPos = len(m.input)
+			}
 			m.input = m.input[:m.inputPos] + s + m.input[m.inputPos:]
 			m.inputPos++
+			m.output = ""
+			m.outputLines = nil
+			m.outputOffset = 0
+			m = m.updateSuggestions()
 		}
 	}
 
@@ -216,7 +251,7 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	// Input line with cursor
 	var inputDisplay string
 	if m.inputPos < len(m.input) {
-		inputDisplay = m.input[:m.inputPos] + "█" + m.input[m.inputPos+1:]
+		inputDisplay = m.input[:m.inputPos] + "█" + m.input[m.inputPos:]
 	} else {
 		inputDisplay = m.input + "█"
 	}
@@ -261,6 +296,15 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			}
 			contentLines = append(contentLines, rendered)
 		}
+	} else if len(m.suggestions) > 0 {
+		oh := boxH - 6
+		if oh < 1 {
+			oh = 1
+		}
+		suggestionLines := formatSuggestions(m.suggestions, innerW, oh)
+		for _, line := range suggestionLines {
+			contentLines = append(contentLines, dimStyle.Render(line))
+		}
 	} else {
 		hint := dimStyle.Render(" Type a command and press Enter")
 		hintWidth := lipgloss.Width(hint)
@@ -274,7 +318,13 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	footerKeyStyle := lipgloss.NewStyle().Background(bg).Foreground(accent).Bold(true)
 	footer := footerKeyStyle.Render(" Enter") + dimStyle.Render(":Run  ") +
 		footerKeyStyle.Render("Esc") + dimStyle.Render(":Close  ") +
-		footerKeyStyle.Render("↑↓") + dimStyle.Render(":Scroll")
+		footerKeyStyle.Render("↑↓") + dimStyle.Render(":Scroll  ") +
+		footerKeyStyle.Render("Ctrl+E") + dimStyle.Render(":")
+	if m.execOnly {
+		footer += dimStyle.Render("ExecOnly")
+	} else {
+		footer += dimStyle.Render("All")
+	}
 
 	if len(m.outputLines) > oh {
 		scrollInfo := fmt.Sprintf("  [%d-%d/%d]", m.outputOffset+1,
@@ -301,4 +351,86 @@ func runCommandCmd(dir, command string) tea.Cmd {
 		err := cmd.Run()
 		return CommandDoneMsg{Output: buf.String(), Err: err}
 	}
+}
+
+func (m Model) completeCurrentWord() Model {
+	start, end, prefix := completion.CurrentWord(m.input, m.inputPos)
+	if prefix == "" {
+		return m
+	}
+
+	candidates := completeCandidates(prefix, m.dir, m.execOnly)
+	m.suggestions = candidates
+	if len(candidates) == 0 {
+		return m
+	}
+
+	if len(candidates) == 1 {
+		m.input = m.input[:start] + mergeCompletion(candidates[0], m.input[end:])
+		m.inputPos = start + len(candidates[0])
+		m.suggestions = nil
+		return m
+	}
+
+	common := completion.CommonPrefix(candidates)
+	if len(common) > len(prefix) {
+		m.input = m.input[:start] + mergeCompletion(common, m.input[end:])
+		m.inputPos = start + len(common)
+		m.suggestions = nil
+	}
+
+	return m
+}
+
+func (m Model) updateSuggestions() Model {
+	_, _, prefix := completion.CurrentWord(m.input, m.inputPos)
+	if prefix == "" {
+		if m.execOnly {
+			m.suggestions = completeCandidates(prefix, m.dir, m.execOnly)
+		} else {
+			m.suggestions = nil
+		}
+		return m
+	}
+	m.suggestions = completeCandidates(prefix, m.dir, m.execOnly)
+	return m
+}
+
+func mergeCompletion(candidate, suffix string) string {
+	for i := len(candidate); i > 0; i-- {
+		if strings.HasPrefix(suffix, candidate[len(candidate)-i:]) {
+			return candidate + suffix[i:]
+		}
+	}
+	return candidate + suffix
+}
+
+func completeCandidates(prefix, dir string, execOnly bool) []string {
+	if execOnly {
+		return completion.CompleteExecCandidates(prefix)
+	}
+
+	pathCandidates := completion.CompletePathCandidates(prefix, dir, false)
+	execCandidates := []string{}
+	if len(pathCandidates) == 0 && !strings.Contains(prefix, "/") {
+		execCandidates = completion.CompleteExecCandidates(prefix)
+	}
+	candidates := make(map[string]struct{})
+	for _, c := range pathCandidates {
+		candidates[c] = struct{}{}
+	}
+	for _, c := range execCandidates {
+		candidates[c] = struct{}{}
+	}
+
+	var out []string
+	for c := range candidates {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func formatSuggestions(suggestions []string, width, maxLines int) []string {
+	return completion.FormatSuggestions(suggestions, width, maxLines, true)
 }

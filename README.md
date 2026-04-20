@@ -22,11 +22,14 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Fuzzy finder** - recursive file search with real-time fuzzy matching
 - **Bookmarks** to quickly jump to most visited locations
 - **Configurable keybindings** - every key is remappable via `config.toml`
+- **Smart autocomplete** - path and command suggestions with `Tab` completion in Go to path and Execute command
 - **File operations** - copy, move, delete, rename, mkdir with confirmation dialogs
 - **Live theme picker** - browse and preview themes with Ctrl-T
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
 - **Quick search** - start typing to jump to matching files instantly
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
+- **Execute files** - run executable files directly with Enter (configurable)
+- **Terminal access** - open shell in current directory with Ctrl+O
 - **Mouse support** - clickable menu bar and panel interaction
 - **Go to path** - quickly jump to any directory with `~` expansion
 - **Single binary** - no runtime dependencies
@@ -36,7 +39,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 ### Using Homebrew
 
 ```bash
-brew install kooler/apps/MiddayCommander
+brew install kooler/apps/middaycommander
 ```
 
 Run: `mdc`
@@ -97,10 +100,12 @@ The left panel opens in the current directory, the right panel in your home dire
 | `Esc Esc` | Quit (double-press) |
 | `Tab` | Switch active panel |
 | `Ctrl-U` | Swap panels |
-| `Ctrl-G` | Go to path |
+| `Ctrl-G` | Go to path (with directory autocomplete) |
+| `Ctrl-R` | Execute command (with path/command autocomplete; inside overlay, `Ctrl+E` toggles exec-only mode) |
 | `Ctrl-P` | Fuzzy finder |
 | `Ctrl-B` | Bookmarks |
 | `Ctrl-T` | Theme picker (live preview) |
+| `Ctrl-H` | Toggle hidden files |
 
 ### Navigation
 
@@ -159,10 +164,14 @@ cp config.example.toml ~/.config/mdc/config.toml
 theme = "catppuccin-mocha"
 
 [behavior]
-# What Enter does on a file: "edit" or "preview"
+# What Enter does on a file: "edit", "preview", or "execute"
 enter_action = "edit"
 # What Space does on a file: "preview" or "edit"
 space_action = "preview"
+# Whether to ask for confirmation before executing a file.
+confirm_execute = true
+# Whether to pause and wait after execution before returning to Midday Commander.
+pause_after_execute = false
 
 [keys]
 quit          = ["f10", "ctrl+c"]
@@ -175,6 +184,7 @@ fuzzy_find    = ["f9", "ctrl+p"]
 bookmarks     = ["f2", "ctrl+b"]
 help          = "f1"
 goto          = "ctrl+g"
+terminal      = "ctrl+o"
 # ... all keys are configurable
 ```
 
