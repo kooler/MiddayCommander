@@ -48,8 +48,8 @@ func main() {
 	if ttyFile != nil {
 		uiOut = ttyFile
 	}
-	uiOut.WriteString("\x1b[>1u")
-	defer uiOut.WriteString("\x1b[<u") // disable on exit
+	_, _ = uiOut.WriteString("\x1b[>1u")
+	defer func() { _, _ = uiOut.WriteString("\x1b[<u") }() // disable on exit
 
 	opts := []tea.ProgramOption{
 		tea.WithAltScreen(),
