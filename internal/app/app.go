@@ -412,13 +412,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			m.dialog.Update(msg)
+			cmd := m.dialog.Update(msg)
 			if m.dialog.Done() {
 				result := m.dialog.GetResult()
 				m.dialog = nil
 				return m.handleDialogResult(result)
 			}
-			return m, nil
+			return m, cmd
 		}
 
 		// Double-Esc to quit

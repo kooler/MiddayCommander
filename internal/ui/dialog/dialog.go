@@ -3,15 +3,22 @@ package dialog
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/platform"
 	"github.com/kooler/MiddayCommander/internal/ui/completion"
 
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
+
+// CopyFlashMsg fires after the brief "Copied!" indicator should clear.
+type CopyFlashMsg struct{}
+
+const copyFlashDuration = 1200 * time.Millisecond
 
 // Kind identifies the dialog type.
 type Kind int
@@ -55,8 +62,9 @@ type Model struct {
 	cancelRequested bool
 
 	// State
-	done   bool
-	result Result
+	done     bool
+	result   Result
+	copiedAt time.Time
 
 	width int
 }
@@ -184,6 +192,14 @@ func (m *Model) updateInput(msg tea.KeyMsg) tea.Cmd {
 	case "tab":
 		if m.tag == "goto" {
 			m.completeGoToPath()
+		}
+	case "ctrl+c":
+		if m.tag == "goto" {
+			platform.CopyToClipboard(m.input)
+			m.copiedAt = time.Now()
+			return tea.Tick(copyFlashDuration, func(time.Time) tea.Msg {
+				return CopyFlashMsg{}
+			})
 		}
 	case "backspace":
 		if m.inputPos > 0 {
@@ -453,6 +469,17 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		footer = keyStyle.Render(" Enter") + dimStyle.Render(":OK") +
 			dimStyle.Render("  ") +
 			keyStyle.Render("Esc") + dimStyle.Render(":Cancel")
+		if m.tag == "goto" {
+			footer += dimStyle.Render("  ") +
+				keyStyle.Render("Ctrl+C") + dimStyle.Render(":Copy")
+			if !m.copiedAt.IsZero() && time.Since(m.copiedAt) < copyFlashDuration {
+				copiedStyle := lipgloss.NewStyle().
+					Background(bg).
+					Foreground(lipgloss.Color("#a6e3a1")).
+					Bold(true)
+				footer += dimStyle.Render("  ") + copiedStyle.Render("✓ Copied")
+			}
+		}
 	case KindProgress:
 		if m.cancelRequested {
 			footer = dimStyle.Render(" Cancelling...")
