@@ -81,6 +81,19 @@ mdc
 
 The left panel opens in the current directory, the right panel in your home directory. Navigate with arrow keys or `j`/`k`, switch panels with `Tab`.
 
+### Return active path on exit (`-r`)
+
+With `mdc -r` the active panel's path is printed on stdout when you quit. Why is it needed? for example if you want to cd to that directory, add the following to your `~/.zshrc` / `~/.bashrc`:
+
+```sh
+mdcd() {
+    local dir
+    dir=$(mdc -r) && [ -n "$dir" ] && cd "$dir"
+}
+```
+
+Now `mdcd` launches mdc; when you quit, the shell `cd`s into the directory the active panel was showing. Good way to navigate around.
+
 ## Keybindings
 
 ### Global

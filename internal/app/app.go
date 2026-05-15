@@ -887,6 +887,15 @@ func (m *Model) activePanel() *panel.Model {
 	return &m.rightPanel
 }
 
+// ActivePanelPath returns the path of the currently focused panel.
+// Used after the program exits to capture the final navigation target.
+func (m Model) ActivePanelPath() string {
+	if m.focus == FocusLeft {
+		return m.leftPanel.Path()
+	}
+	return m.rightPanel.Path()
+}
+
 func (m *Model) inactivePanelModel() *panel.Model {
 	if m.focus == FocusLeft {
 		return &m.rightPanel
