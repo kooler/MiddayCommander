@@ -60,8 +60,6 @@ brews:
     homepage: https://github.com/kooler/MiddayCommander
     description: "A modern dual-panel terminal file manager"
     license: MIT
-    custom_block: |
-      oldnames "MiddayCommander"
     test: |
       system "#{bin}/mdc", "--version"
     install: |
