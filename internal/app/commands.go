@@ -66,6 +66,14 @@ func copyCmd(ctx context.Context, ch chan actions.Progress, sources []string, de
 	}
 }
 
+func copyAsCmd(ctx context.Context, ch chan actions.Progress, source, destPath string) tea.Cmd {
+	return func() tea.Msg {
+		err := actions.CopyAs(ctx, source, destPath, sendProgress(ctx, ch))
+		close(ch)
+		return copyDoneMsg{err: err}
+	}
+}
+
 func moveCmd(ctx context.Context, ch chan actions.Progress, sources []string, dest string) tea.Cmd {
 	return func() tea.Msg {
 		err := actions.Move(ctx, sources, dest, sendProgress(ctx, ch))
@@ -257,4 +265,14 @@ func (m *Model) currentFilePath() string {
 // activePanelMkdir returns the full path for a new directory in the active panel.
 func (m *Model) activePanelMkdir(name string) string {
 	return filepath.Join(m.activePanel().Path(), name)
+}
+
+// expandHome replaces a leading "~" with the user's home directory.
+func expandHome(path string) string {
+	if len(path) > 0 && path[0] == '~' {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home + path[1:]
+		}
+	}
+	return path
 }

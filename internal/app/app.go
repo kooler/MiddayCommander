@@ -40,6 +40,7 @@ const (
 // Dialog tags identify which operation triggered the dialog.
 const (
 	tagCopy    = "copy"
+	tagCopyAs  = "copyas"
 	tagMove    = "move"
 	tagDelete  = "delete"
 	tagMkdir   = "mkdir"
@@ -632,6 +633,13 @@ func (m Model) startCopy() (tea.Model, tea.Cmd) {
 	m.pendingSources = sources
 	m.pendingDest = dest
 
+	if len(sources) == 1 {
+		defaultPath := filepath.Join(dest, filepath.Base(sources[0]))
+		d := dialog.NewInput("Copy", "Copy to:", defaultPath, tagCopyAs)
+		m.dialog = &d
+		return m, nil
+	}
+
 	msg := fmt.Sprintf("Copy %d item(s) to %s?", len(sources), dest)
 	d := dialog.NewConfirm("Copy", msg, tagCopy)
 	m.dialog = &d
@@ -784,6 +792,18 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 				waitForProgress(ch),
 			)
 		}
+	case tagCopyAs:
+		if result.Confirmed && strings.TrimSpace(result.Text) != "" && len(m.pendingSources) == 1 {
+			target := expandHome(result.Text)
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(m.pendingDest, target)
+			}
+			ctx, ch := m.startProgressOp("Copying")
+			return m, tea.Batch(
+				copyAsCmd(ctx, ch, m.pendingSources[0], target),
+				waitForProgress(ch),
+			)
+		}
 	case tagMove:
 		if result.Confirmed {
 			ctx, ch := m.startProgressOp("Moving")
@@ -810,13 +830,7 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 		}
 	case tagGoTo:
 		if result.Confirmed && result.Text != "" {
-			path := result.Text
-			// Expand ~ to home directory
-			if len(path) > 0 && path[0] == '~' {
-				if home, err := os.UserHomeDir(); err == nil {
-					path = home + path[1:]
-				}
-			}
+			path := expandHome(result.Text)
 			m.activePanel().SetPath(path)
 			return m, m.activePanel().LoadDir()
 		}

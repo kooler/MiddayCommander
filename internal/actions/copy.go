@@ -52,6 +52,42 @@ func Copy(ctx context.Context, sources []string, destDir string, progressFn func
 	return nil
 }
 
+// CopyAs copies a single source to destPath (a full path, not a directory).
+// Used for single-item copy where the user may have renamed the target.
+func CopyAs(ctx context.Context, source, destPath string, progressFn func(Progress)) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", source, err)
+	}
+
+	if absEq(source, destPath) {
+		return fmt.Errorf("source and destination are the same: %s", source)
+	}
+
+	totalFiles, totalBytes := countFilesAndBytes([]string{source})
+	p := Progress{
+		Op:         OpCopy,
+		TotalFiles: totalFiles,
+		TotalBytes: totalBytes,
+	}
+
+	if info.IsDir() {
+		return copyDir(ctx, source, destPath, &p, progressFn)
+	}
+	return copyFile(ctx, source, destPath, info, &p, progressFn)
+}
+
+// absEq reports whether two paths refer to the same location after
+// resolving to absolute, cleaned form.
+func absEq(a, b string) bool {
+	aa, ea := filepath.Abs(a)
+	bb, eb := filepath.Abs(b)
+	if ea != nil || eb != nil {
+		return false
+	}
+	return filepath.Clean(aa) == filepath.Clean(bb)
+}
+
 func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, p *Progress, progressFn func(Progress)) error {
 	p.Current = filepath.Base(src)
 	p.FileTotalBytes = info.Size()
