@@ -124,10 +124,16 @@ The left panel opens in the current directory, the right panel in your home dire
 
 | Key | Action |
 |-----|--------|
-| `Insert` | Toggle selection on current file |
+| `Insert` | Toggle selection on current file (and move down) |
 | `Shift-Up` | Select and move up |
 | `Shift-Down` | Select and move down |
-| `Insert` | Toggle selection and move down |
+| `+` | Select group by shell pattern (e.g. `*.go`) |
+| `-` | Deselect group by shell pattern |
+| `*` | Invert selection of all entries |
+
+Group selection uses standard shell globs (`*`, `?`, `[abc]`) matched against
+file names. The dialog opens with `*` pre-filled, so `+` `Enter` tags every
+entry and `-` `Enter` clears the selection.
 
 ### Bookmarks
 

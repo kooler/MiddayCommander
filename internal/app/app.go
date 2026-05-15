@@ -45,8 +45,10 @@ const (
 	tagDelete  = "delete"
 	tagMkdir   = "mkdir"
 	tagRename  = "rename"
-	tagGoTo    = "goto"
-	tagExecute = "execute"
+	tagGoTo          = "goto"
+	tagExecute       = "execute"
+	tagSelectGroup   = "selectgroup"
+	tagDeselectGroup = "deselectgroup"
 )
 
 // Model is the root application model.
@@ -495,6 +497,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rightPanel.ToggleHidden()
 			_ = config.SaveShowHidden(m.leftPanel.ShowHidden())
 			return m, m.refreshBothPanels()
+
+		case key.Matches(msg, m.keyMap.SelectGroup):
+			return m.startSelectGroup()
+
+		case key.Matches(msg, m.keyMap.DeselectGroup):
+			return m.startDeselectGroup()
+
+		case key.Matches(msg, m.keyMap.InvertSelection):
+			m.activePanel().InvertSelection()
+			return m, nil
 		}
 
 		// Delegate to active panel
@@ -680,6 +692,18 @@ func (m Model) startMkdir() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) startSelectGroup() (tea.Model, tea.Cmd) {
+	d := dialog.NewInput("Select group", "Pattern:", "*", tagSelectGroup)
+	m.dialog = &d
+	return m, nil
+}
+
+func (m Model) startDeselectGroup() (tea.Model, tea.Cmd) {
+	d := dialog.NewInput("Deselect group", "Pattern:", "*", tagDeselectGroup)
+	m.dialog = &d
+	return m, nil
+}
+
 func (m Model) startRename() (tea.Model, tea.Cmd) {
 	name := m.currentFileName()
 	if name == "" || name == ".." {
@@ -837,6 +861,18 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 	case tagExecute:
 		if result.Confirmed {
 			return m, executeFileCmd(m.pendingExecutePath, m.activePanel().Path(), m.cfg.Behavior.PauseAfterExecute)
+		}
+	case tagSelectGroup:
+		if result.Confirmed && result.Text != "" {
+			if err := m.activePanel().SelectByPattern(result.Text); err != nil {
+				return m.showError("Invalid pattern", err)
+			}
+		}
+	case tagDeselectGroup:
+		if result.Confirmed && result.Text != "" {
+			if err := m.activePanel().DeselectByPattern(result.Text); err != nil {
+				return m.showError("Invalid pattern", err)
+			}
 		}
 	}
 	return m, nil

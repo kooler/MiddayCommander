@@ -59,9 +59,12 @@ type KeyBindings struct {
 	GoBack   StringOrList `toml:"go_back"`
 
 	// Selection
-	ToggleSelect StringOrList `toml:"toggle_select"`
-	SelectUp     StringOrList `toml:"select_up"`
-	SelectDown   StringOrList `toml:"select_down"`
+	ToggleSelect    StringOrList `toml:"toggle_select"`
+	SelectUp        StringOrList `toml:"select_up"`
+	SelectDown      StringOrList `toml:"select_down"`
+	SelectGroup     StringOrList `toml:"select_group"`
+	DeselectGroup   StringOrList `toml:"deselect_group"`
+	InvertSelection StringOrList `toml:"invert_selection"`
 
 	// Search
 	QuickSearch StringOrList `toml:"quick_search"`
@@ -139,9 +142,12 @@ func DefaultKeyBindings() KeyBindings {
 		End:      StringOrList{"end"},
 		GoBack:   StringOrList{"backspace"},
 
-		ToggleSelect: StringOrList{"insert"},
-		SelectUp:     StringOrList{"shift+up"},
-		SelectDown:   StringOrList{"shift+down"},
+		ToggleSelect:    StringOrList{"insert"},
+		SelectUp:        StringOrList{"shift+up"},
+		SelectDown:      StringOrList{"shift+down"},
+		SelectGroup:     StringOrList{"+"},
+		DeselectGroup:   StringOrList{"-"},
+		InvertSelection: StringOrList{"*"},
 
 		QuickSearch: StringOrList{"ctrl+s"},
 
@@ -220,6 +226,9 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.ToggleSelect, src.ToggleSelect)
 	mergeKey(&dst.SelectUp, src.SelectUp)
 	mergeKey(&dst.SelectDown, src.SelectDown)
+	mergeKey(&dst.SelectGroup, src.SelectGroup)
+	mergeKey(&dst.DeselectGroup, src.DeselectGroup)
+	mergeKey(&dst.InvertSelection, src.InvertSelection)
 	mergeKey(&dst.QuickSearch, src.QuickSearch)
 	mergeKey(&dst.GoTo, src.GoTo)
 	mergeKey(&dst.FuzzyFind, src.FuzzyFind)
@@ -279,6 +288,9 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.ToggleSelect)
 	normalizeSlice(&kb.SelectUp)
 	normalizeSlice(&kb.SelectDown)
+	normalizeSlice(&kb.SelectGroup)
+	normalizeSlice(&kb.DeselectGroup)
+	normalizeSlice(&kb.InvertSelection)
 	normalizeSlice(&kb.QuickSearch)
 	normalizeSlice(&kb.GoTo)
 	normalizeSlice(&kb.FuzzyFind)

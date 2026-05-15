@@ -49,9 +49,12 @@ end           = "end"
 go_back       = "backspace"
 
 # Selection
-toggle_select = "insert"
-select_up     = "shift+up"
-select_down   = "shift+down"
+toggle_select    = "insert"
+select_up        = "shift+up"
+select_down      = "shift+down"
+select_group     = "+"
+deselect_group   = "-"
+invert_selection = "*"
 
 # Search
 quick_search  = "ctrl+s"

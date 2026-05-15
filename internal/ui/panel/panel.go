@@ -554,6 +554,56 @@ func (m *Model) toggleSelect() {
 	}
 }
 
+// SelectByPattern marks every non-".." entry whose Name() matches the
+// shell glob (filepath.Match). Returns an error if the pattern is invalid.
+func (m *Model) SelectByPattern(pattern string) error {
+	for i, e := range m.entries {
+		if e.Name() == ".." {
+			continue
+		}
+		ok, err := filepath.Match(pattern, e.Name())
+		if err != nil {
+			return err
+		}
+		if ok {
+			m.selected[i] = true
+		}
+	}
+	return nil
+}
+
+// DeselectByPattern clears selection on every non-".." entry whose Name()
+// matches the shell glob.
+func (m *Model) DeselectByPattern(pattern string) error {
+	for i, e := range m.entries {
+		if e.Name() == ".." {
+			continue
+		}
+		ok, err := filepath.Match(pattern, e.Name())
+		if err != nil {
+			return err
+		}
+		if ok {
+			delete(m.selected, i)
+		}
+	}
+	return nil
+}
+
+// InvertSelection flips selection state for every non-".." entry.
+func (m *Model) InvertSelection() {
+	for i, e := range m.entries {
+		if e.Name() == ".." {
+			continue
+		}
+		if m.selected[i] {
+			delete(m.selected, i)
+		} else {
+			m.selected[i] = true
+		}
+	}
+}
+
 // ChangeSortMode cycles to the next sort mode and re-sorts.
 func (m *Model) ChangeSortMode() {
 	m.sortMode = (m.sortMode + 1) % 4

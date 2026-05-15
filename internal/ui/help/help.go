@@ -84,6 +84,9 @@ func (m Model) leftEntries() []entry {
 		{"Toggle select", fmtKeys(k.ToggleSelect)},
 		{"Select up", fmtKeys(k.SelectUp)},
 		{"Select down", fmtKeys(k.SelectDown)},
+		{"Select group", fmtKeys(k.SelectGroup)},
+		{"Deselect group", fmtKeys(k.DeselectGroup)},
+		{"Invert selection", fmtKeys(k.InvertSelection)},
 	}
 }
 
