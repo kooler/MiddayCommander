@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,26 +22,62 @@ type deleteDoneMsg struct{ err error }
 type mkdirDoneMsg struct{ err error }
 type renameDoneMsg struct{ err error }
 
+// progressMsg streams one update from an in-flight file operation.
+type progressMsg struct {
+	p  actions.Progress
+	ch chan actions.Progress
+}
+
+// progressChanClosedMsg is emitted when the progress channel drains after the
+// operation finishes.
+type progressChanClosedMsg struct{}
+
 // externalDoneMsg is sent when an external viewer/editor returns.
 type externalDoneMsg struct{ err error }
 
-func copyCmd(sources []string, dest string) tea.Cmd {
+// waitForProgress returns a command that pulls the next progress value from ch.
+// On close, it returns progressChanClosedMsg so we stop rescheduling.
+func waitForProgress(ch chan actions.Progress) tea.Cmd {
 	return func() tea.Msg {
-		err := actions.Copy(sources, dest, nil)
+		p, ok := <-ch
+		if !ok {
+			return progressChanClosedMsg{}
+		}
+		return progressMsg{p: p, ch: ch}
+	}
+}
+
+// sendProgress bridges actions.Progress callbacks onto the channel, honoring
+// ctx cancellation so the worker never blocks once the user hits Esc.
+func sendProgress(ctx context.Context, ch chan actions.Progress) func(actions.Progress) {
+	return func(p actions.Progress) {
+		select {
+		case ch <- p:
+		case <-ctx.Done():
+		}
+	}
+}
+
+func copyCmd(ctx context.Context, ch chan actions.Progress, sources []string, dest string) tea.Cmd {
+	return func() tea.Msg {
+		err := actions.Copy(ctx, sources, dest, sendProgress(ctx, ch))
+		close(ch)
 		return copyDoneMsg{err: err}
 	}
 }
 
-func moveCmd(sources []string, dest string) tea.Cmd {
+func moveCmd(ctx context.Context, ch chan actions.Progress, sources []string, dest string) tea.Cmd {
 	return func() tea.Msg {
-		err := actions.Move(sources, dest, nil)
+		err := actions.Move(ctx, sources, dest, sendProgress(ctx, ch))
+		close(ch)
 		return moveDoneMsg{err: err}
 	}
 }
 
-func deleteCmd(paths []string) tea.Cmd {
+func deleteCmd(ctx context.Context, ch chan actions.Progress, paths []string) tea.Cmd {
 	return func() tea.Msg {
-		err := actions.Delete(paths, nil)
+		err := actions.Delete(ctx, paths, sendProgress(ctx, ch))
+		close(ch)
 		return deleteDoneMsg{err: err}
 	}
 }

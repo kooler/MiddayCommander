@@ -1,15 +1,24 @@
 package actions
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
+// copyChunk is the max bytes copied between progress reports / cancel checks.
+const copyChunk = 256 * 1024
+
+// progressInterval throttles per-file byte progress reports.
+const progressInterval = 80 * time.Millisecond
+
 // Copy recursively copies sources to destDir, reporting progress via progressFn.
-func Copy(sources []string, destDir string, progressFn func(Progress)) error {
+// The operation can be cancelled via ctx.
+func Copy(ctx context.Context, sources []string, destDir string, progressFn func(Progress)) error {
 	totalFiles, totalBytes := countFilesAndBytes(sources)
 	p := Progress{
 		Op:         OpCopy,
@@ -18,6 +27,10 @@ func Copy(sources []string, destDir string, progressFn func(Progress)) error {
 	}
 
 	for _, src := range sources {
+		if err := ctx.Err(); err != nil {
+			return ErrCancelled
+		}
+
 		info, err := os.Lstat(src)
 		if err != nil {
 			return fmt.Errorf("stat %s: %w", src, err)
@@ -26,11 +39,11 @@ func Copy(sources []string, destDir string, progressFn func(Progress)) error {
 		destPath := filepath.Join(destDir, filepath.Base(src))
 
 		if info.IsDir() {
-			if err := copyDir(src, destPath, &p, progressFn); err != nil {
+			if err := copyDir(ctx, src, destPath, &p, progressFn); err != nil {
 				return err
 			}
 		} else {
-			if err := copyFile(src, destPath, info, &p, progressFn); err != nil {
+			if err := copyFile(ctx, src, destPath, info, &p, progressFn); err != nil {
 				return err
 			}
 		}
@@ -39,8 +52,10 @@ func Copy(sources []string, destDir string, progressFn func(Progress)) error {
 	return nil
 }
 
-func copyFile(src, dst string, info fs.FileInfo, p *Progress, progressFn func(Progress)) error {
+func copyFile(ctx context.Context, src, dst string, info fs.FileInfo, p *Progress, progressFn func(Progress)) error {
 	p.Current = filepath.Base(src)
+	p.FileTotalBytes = info.Size()
+	p.FileDoneBytes = 0
 	if progressFn != nil {
 		progressFn(*p)
 	}
@@ -57,12 +72,34 @@ func copyFile(src, dst string, info fs.FileInfo, p *Progress, progressFn func(Pr
 	}
 	defer dstFile.Close()
 
-	written, err := io.Copy(dstFile, srcFile)
-	if err != nil {
-		return fmt.Errorf("copy %s -> %s: %w", src, dst, err)
+	buf := make([]byte, copyChunk)
+	lastReport := time.Now()
+
+	for {
+		if err := ctx.Err(); err != nil {
+			return ErrCancelled
+		}
+
+		n, rerr := srcFile.Read(buf)
+		if n > 0 {
+			if _, werr := dstFile.Write(buf[:n]); werr != nil {
+				return fmt.Errorf("write %s: %w", dst, werr)
+			}
+			p.FileDoneBytes += int64(n)
+			p.DoneBytes += int64(n)
+			if progressFn != nil && time.Since(lastReport) >= progressInterval {
+				progressFn(*p)
+				lastReport = time.Now()
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return fmt.Errorf("read %s: %w", src, rerr)
+		}
 	}
 
-	p.DoneBytes += written
 	p.DoneFiles++
 	if progressFn != nil {
 		progressFn(*p)
@@ -71,7 +108,11 @@ func copyFile(src, dst string, info fs.FileInfo, p *Progress, progressFn func(Pr
 	return nil
 }
 
-func copyDir(src, dst string, p *Progress, progressFn func(Progress)) error {
+func copyDir(ctx context.Context, src, dst string, p *Progress, progressFn func(Progress)) error {
+	if err := ctx.Err(); err != nil {
+		return ErrCancelled
+	}
+
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		return err
@@ -96,11 +137,11 @@ func copyDir(src, dst string, p *Progress, progressFn func(Progress)) error {
 		}
 
 		if entry.IsDir() {
-			if err := copyDir(srcPath, dstPath, p, progressFn); err != nil {
+			if err := copyDir(ctx, srcPath, dstPath, p, progressFn); err != nil {
 				return err
 			}
 		} else {
-			if err := copyFile(srcPath, dstPath, info, p, progressFn); err != nil {
+			if err := copyFile(ctx, srcPath, dstPath, info, p, progressFn); err != nil {
 				return err
 			}
 		}

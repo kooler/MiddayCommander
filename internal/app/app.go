@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/kooler/MiddayCommander/internal/actions"
 	"github.com/kooler/MiddayCommander/internal/bookmark"
 	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/ui/bookmarks"
@@ -76,6 +79,9 @@ type Model struct {
 	pendingSources     []string
 	pendingDest        string
 	pendingExecutePath string
+
+	// In-flight file operation state
+	opCancel context.CancelFunc
 
 	// Double-Esc to quit
 	lastEsc time.Time
@@ -271,25 +277,39 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// File operation results
 	case copyDoneMsg:
-		m.dialog = nil
-		if msg.err != nil {
+		m.finishOp()
+		if msg.err != nil && !errors.Is(msg.err, actions.ErrCancelled) {
 			return m.showError("Copy Error", msg.err)
 		}
 		return m, m.refreshBothPanels()
 
 	case moveDoneMsg:
-		m.dialog = nil
-		if msg.err != nil {
+		m.finishOp()
+		if msg.err != nil && !errors.Is(msg.err, actions.ErrCancelled) {
 			return m.showError("Move Error", msg.err)
 		}
 		return m, m.refreshBothPanels()
 
 	case deleteDoneMsg:
-		m.dialog = nil
-		if msg.err != nil {
+		m.finishOp()
+		if msg.err != nil && !errors.Is(msg.err, actions.ErrCancelled) {
 			return m.showError("Delete Error", msg.err)
 		}
 		return m, m.refreshBothPanels()
+
+	case progressMsg:
+		if m.dialog != nil && m.dialog.Kind() == dialog.KindProgress {
+			m.dialog.SetProgress(
+				msg.p.TotalFiles, msg.p.DoneFiles,
+				msg.p.TotalBytes, msg.p.DoneBytes,
+				msg.p.FileTotalBytes, msg.p.FileDoneBytes,
+				msg.p.Current,
+			)
+		}
+		return m, waitForProgress(msg.ch)
+
+	case progressChanClosedMsg:
+		return m, nil
 
 	case mkdirDoneMsg:
 		if msg.err != nil {
@@ -378,6 +398,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Dialog gets priority
 		if m.dialog != nil {
+			// Progress dialog: Esc cancels the in-flight op; other keys no-op.
+			// The dialog closes automatically when the op returns.
+			if m.dialog.Kind() == dialog.KindProgress {
+				if msg.String() == "esc" && !m.dialog.CancelRequested() {
+					m.dialog.RequestCancel()
+					if m.opCancel != nil {
+						m.opCancel()
+					}
+				}
+				return m, nil
+			}
 			m.dialog.Update(msg)
 			if m.dialog.Done() {
 				result := m.dialog.GetResult()
@@ -717,6 +748,26 @@ func (m Model) startEdit() (tea.Model, tea.Cmd) {
 	return m, editFileCmd(m.currentFilePath())
 }
 
+// startProgressOp opens a progress dialog, creates a cancellable context
+// and the channel used to stream progress updates back into Update.
+func (m *Model) startProgressOp(title string) (context.Context, chan actions.Progress) {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.opCancel = cancel
+	d := dialog.NewProgress(title, "")
+	m.dialog = &d
+	ch := make(chan actions.Progress, 16)
+	return ctx, ch
+}
+
+// finishOp closes the progress dialog and clears cancellation state.
+func (m *Model) finishOp() {
+	if m.opCancel != nil {
+		m.opCancel()
+		m.opCancel = nil
+	}
+	m.dialog = nil
+}
+
 func (m Model) showError(title string, err error) (tea.Model, tea.Cmd) {
 	d := dialog.NewError(title, err.Error())
 	m.dialog = &d
@@ -727,15 +778,27 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 	switch result.Tag {
 	case tagCopy:
 		if result.Confirmed {
-			return m, copyCmd(m.pendingSources, m.pendingDest)
+			ctx, ch := m.startProgressOp("Copying")
+			return m, tea.Batch(
+				copyCmd(ctx, ch, m.pendingSources, m.pendingDest),
+				waitForProgress(ch),
+			)
 		}
 	case tagMove:
 		if result.Confirmed {
-			return m, moveCmd(m.pendingSources, m.pendingDest)
+			ctx, ch := m.startProgressOp("Moving")
+			return m, tea.Batch(
+				moveCmd(ctx, ch, m.pendingSources, m.pendingDest),
+				waitForProgress(ch),
+			)
 		}
 	case tagDelete:
 		if result.Confirmed {
-			return m, deleteCmd(m.pendingSources)
+			ctx, ch := m.startProgressOp("Deleting")
+			return m, tea.Batch(
+				deleteCmd(ctx, ch, m.pendingSources),
+				waitForProgress(ch),
+			)
 		}
 	case tagMkdir:
 		if result.Confirmed && result.Text != "" {

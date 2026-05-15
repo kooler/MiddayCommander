@@ -1,6 +1,7 @@
 package dialog
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,8 +45,14 @@ type Model struct {
 	suggestions []string
 
 	// Progress dialog
-	progress float64
-	current  string
+	totalFiles     int
+	doneFiles      int
+	totalBytes     int64
+	doneBytes      int64
+	fileTotalBytes int64
+	fileDoneBytes  int64
+	current        string
+	cancelRequested bool
 
 	// State
 	done   bool
@@ -99,7 +106,7 @@ func NewProgress(title, tag string) Model {
 		kind:  KindProgress,
 		title: title,
 		tag:   tag,
-		width: 50,
+		width: 64,
 	}
 }
 
@@ -114,10 +121,29 @@ func (m Model) GetResult() Result {
 }
 
 // SetProgress updates the progress dialog state.
-func (m *Model) SetProgress(progress float64, current string) {
-	m.progress = progress
+func (m *Model) SetProgress(totalFiles, doneFiles int, totalBytes, doneBytes, fileTotalBytes, fileDoneBytes int64, current string) {
+	m.totalFiles = totalFiles
+	m.doneFiles = doneFiles
+	m.totalBytes = totalBytes
+	m.doneBytes = doneBytes
+	m.fileTotalBytes = fileTotalBytes
+	m.fileDoneBytes = fileDoneBytes
 	m.current = current
 }
+
+// RequestCancel marks the progress dialog as awaiting cancellation. The dialog
+// stays open (so the user sees "Cancelling...") until the operation returns.
+func (m *Model) RequestCancel() {
+	if m.kind == KindProgress {
+		m.cancelRequested = true
+	}
+}
+
+// CancelRequested reports whether the user hit Esc on a progress dialog.
+func (m Model) CancelRequested() bool { return m.cancelRequested }
+
+// Kind returns the dialog kind.
+func (m Model) Kind() Kind { return m.kind }
 
 // Update handles key events for the dialog.
 func (m *Model) Update(msg tea.KeyMsg) tea.Cmd {
@@ -254,10 +280,8 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	h := 2 + 1 + msgLines + 1 + 1 // borders + blank + content + blank + footer
 	switch m.kind {
 	case KindProgress:
-		h++ // progress bar
-		if m.current != "" {
-			h++ // current file
-		}
+		// current file label + file bar + spacer + total label + total bar
+		h += 5
 	}
 	maxH := screenHeight * 3 / 4
 	if h > maxH {
@@ -365,17 +389,55 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 
 	case KindProgress:
 		barWidth := innerW - 2
-		filled := int(m.progress * float64(barWidth))
-		if filled > barWidth {
-			filled = barWidth
+		if barWidth < 1 {
+			barWidth = 1
 		}
-		bar := progressStyle.Render(" "+strings.Repeat("█", filled)) +
-			dimStyle.Render(strings.Repeat("░", barWidth-filled)+" ")
-		contentLines = append(contentLines, bar)
-		if m.current != "" {
-			cur := dimStyle.Render(" " + padRight(m.current, innerW-1))
-			contentLines = append(contentLines, cur)
+
+		// Current file label
+		curName := m.current
+		if curName == "" {
+			curName = "—"
 		}
+		fileLabel := "File: " + curName
+		if m.fileTotalBytes > 0 {
+			fileLabel += fmt.Sprintf("  (%s / %s)",
+				formatBytes(m.fileDoneBytes), formatBytes(m.fileTotalBytes))
+		}
+		fileLabel = truncateLeft(fileLabel, innerW-2)
+		contentLines = append(contentLines,
+			bgStyle.Render(" "+padRight(fileLabel, innerW-1)))
+
+		// Per-file bar
+		var fileFrac float64
+		if m.fileTotalBytes > 0 {
+			fileFrac = float64(m.fileDoneBytes) / float64(m.fileTotalBytes)
+		}
+		contentLines = append(contentLines, renderBar(fileFrac, barWidth, progressStyle, dimStyle))
+
+		// Spacer
+		contentLines = append(contentLines, bgStyle.Render(strings.Repeat(" ", innerW)))
+
+		// Total summary line
+		totalLabel := fmt.Sprintf("Total: %d / %d files", m.doneFiles, m.totalFiles)
+		if m.totalBytes > 0 {
+			totalLabel += fmt.Sprintf("   %s / %s",
+				formatBytes(m.doneBytes), formatBytes(m.totalBytes))
+		}
+		if m.cancelRequested {
+			totalLabel += "   [cancelling…]"
+		}
+		totalLabel = truncateLeft(totalLabel, innerW-2)
+		contentLines = append(contentLines,
+			bgStyle.Render(" "+padRight(totalLabel, innerW-1)))
+
+		// Total bar
+		var totalFrac float64
+		if m.totalBytes > 0 {
+			totalFrac = float64(m.doneBytes) / float64(m.totalBytes)
+		} else if m.totalFiles > 0 {
+			totalFrac = float64(m.doneFiles) / float64(m.totalFiles)
+		}
+		contentLines = append(contentLines, renderBar(totalFrac, barWidth, progressStyle, dimStyle))
 	}
 
 	// Footer with key hints
@@ -392,7 +454,11 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			dimStyle.Render("  ") +
 			keyStyle.Render("Esc") + dimStyle.Render(":Cancel")
 	case KindProgress:
-		footer = dimStyle.Render(" Working...")
+		if m.cancelRequested {
+			footer = dimStyle.Render(" Cancelling...")
+		} else {
+			footer = keyStyle.Render(" Esc") + dimStyle.Render(":Cancel")
+		}
 	case KindError:
 		footer = keyStyle.Render(" Enter") + dimStyle.Render(":Close") +
 			dimStyle.Render("  ") +
@@ -406,6 +472,49 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	boxW2, boxH := m.BoxSize(screenWidth, screenHeight)
 	return overlay.RenderBox(m.title, contentLines, footer, boxW2, boxH,
 		accent, bg, highlight)
+}
+
+func renderBar(frac float64, width int, fill, empty lipgloss.Style) string {
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	filled := int(frac * float64(width))
+	if filled > width {
+		filled = width
+	}
+	return fill.Render(" "+strings.Repeat("█", filled)) +
+		empty.Render(strings.Repeat("░", width-filled)+" ")
+}
+
+func formatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for n/div >= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// truncateLeft keeps the right-most characters, prefixing with … if clipped.
+// Useful for long file paths where the trailing name matters more.
+func truncateLeft(s string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	if len(s) <= width {
+		return s
+	}
+	if width == 1 {
+		return "…"
+	}
+	return "…" + s[len(s)-width+1:]
 }
 
 func padRight(s string, width int) string {
