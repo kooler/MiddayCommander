@@ -1,0 +1,36 @@
+name = "Tokyo Night"
+
+[palette]
+bg     = "#1a1b26"
+fg     = "#c0caf5"
+blue   = "#7aa2f7"
+green  = "#9ece6a"
+cyan   = "#7dcfff"
+purple = "#bb9af7"
+red    = "#f7768e"
+yellow = "#e0af68"
+
+[panel]
+border_fg        = "blue"
+border_bg        = "bg"
+border_active_fg = "fg"
+border_active_bg = "bg"
+
+[panel.file]
+normal_fg  = "fg"
+normal_bg  = "bg"
+dir_fg     = "blue"
+dir_bold   = true
+exec_fg    = "green"
+
+[statusbar]
+fg = "bg"
+bg = "blue"
+
+[menubar]
+fg            = "bg"
+bg            = "blue"
+fkey_hint_fg  = "fg"
+fkey_hint_bg  = "bg"
+fkey_label_fg = "bg"
+fkey_label_bg = "blue"
