@@ -45,7 +45,14 @@ brew install kooler/apps/middaycommander
 Run: `mdc`
 
 ### From releases (MacOS/Windows/Linux)
+
 Download a binary from the [Releases](https://github.com/kooler/MiddayCommander/releases) in Github.
+
+### Using Mise en place
+
+```bash
+mise use --global github:kooler/MiddayCommander
+```
 
 ### Build from source
 
