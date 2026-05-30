@@ -28,6 +28,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Multi-file selection** - tag files with Insert or Shift+Arrow for batch operations
 - **Quick search** - start typing to jump to matching files instantly
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
+- **Quick view** - preview the selected file in the other pane (read-only, follows the cursor) with Ctrl+Q
 - **Execute files** - run executable files directly with Enter (configurable)
 - **Terminal access** - open shell in current directory with Ctrl+O
 - **Mouse support** - clickable menu bar and panel interaction
@@ -126,6 +127,7 @@ Now `mdcd` launches mdc; when you quit, the shell `cd`s into the directory the a
 | `Ctrl-B` | Bookmarks |
 | `Ctrl-T` | Theme picker (live preview) |
 | `Ctrl-H` | Toggle hidden files |
+| `Ctrl-Q` | Quick view - preview selected file in the other pane |
 
 ### Navigation
 
@@ -165,6 +167,14 @@ entry and `-` `Enter` clears the selection.
 | `0`-`9` | Quick jump to bookmark |
 | `Enter` | Navigate to bookmark |
 | `Esc` | Close |
+
+### Quick view
+
+Press `Ctrl-Q` to turn the inactive pane into a live, read-only preview of the file selected in the active pane. As you move the cursor, the preview follows the selection. Press `Tab` to move focus into the preview and scroll it (`Up`/`Down`, `PgUp`/`PgDn`, `Home`/`End`), and `Tab` again to return to the listing. Press `Esc` (or `Ctrl-Q` again) to close it.
+
+Non-text files stay visible in the preview with a short summary (binary, directory, empty) rather than garbled content. Only the head of large files is loaded.
+
+> **Note:** on some terminals `Ctrl-Q` is reserved for XON/XOFF flow control and never reaches the application. If it does nothing, rebind `quick_view` to another key in `config.toml`.
 
 ### Archives
 
@@ -211,6 +221,7 @@ bookmarks     = ["f2", "ctrl+b"]
 help          = "f1"
 goto          = "ctrl+g"
 terminal      = "ctrl+o"
+quick_view    = "ctrl+q"
 # ... all keys are configurable
 ```
 
