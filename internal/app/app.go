@@ -24,6 +24,7 @@ import (
 	"github.com/kooler/MiddayCommander/internal/ui/menubar"
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/panel"
+	"github.com/kooler/MiddayCommander/internal/ui/quickview"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 	"github.com/kooler/MiddayCommander/internal/ui/themepicker"
 	"github.com/kooler/MiddayCommander/internal/vfs/local"
@@ -71,6 +72,12 @@ type Model struct {
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
+
+	// Quick view: non-nil when the inactive pane shows a file preview.
+	// quickFocus toggles whether keys scroll the preview (true) or drive the
+	// active listing (false). m.focus always remains the driver panel.
+	quickview  *quickview.Model
+	quickFocus bool
 
 	// Saved theme for reverting on Esc in theme picker
 	themeBeforePick theme.Theme
@@ -172,10 +179,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case panel.DirLoadedMsg:
 		m.leftPanel.HandleDirLoaded(msg)
 		m.rightPanel.HandleDirLoaded(msg)
+		if m.quickview != nil && !m.quickFocus {
+			m.syncQuickView()
+		}
 		return m, nil
 
 	case panel.RestoreCursorMsg:
 		m.activePanel().RestoreCursor(msg.Name)
+		if m.quickview != nil && !m.quickFocus {
+			m.syncQuickView()
+		}
 		return m, nil
 
 	// Help messages
@@ -421,6 +434,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Quick view active: Esc closes it; Tab toggles preview focus.
+		if m.quickview != nil {
+			if msg.String() == "esc" {
+				m.closeQuickView()
+				return m, nil
+			}
+			if key.Matches(msg, m.keyMap.TogglePanel) {
+				m.quickFocus = !m.quickFocus
+				m.quickview.SetFocused(m.quickFocus)
+				return m, nil
+			}
+			if key.Matches(msg, m.keyMap.QuickView) {
+				m.closeQuickView()
+				return m, nil
+			}
+			// While the preview is focused it is modal: only scroll keys apply.
+			if m.quickFocus {
+				m.quickview.Update(msg)
+				return m, nil
+			}
+		}
+
 		// Double-Esc to quit
 		if msg.String() == "esc" {
 			now := time.Now()
@@ -436,11 +471,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keyMap.Quit):
 			return m, tea.Quit
 
+		case key.Matches(msg, m.keyMap.QuickView):
+			m.openQuickView()
+			return m, nil
+
 		case key.Matches(msg, m.keyMap.TogglePanel):
 			m.toggleFocus()
 			return m, nil
 
 		case key.Matches(msg, m.keyMap.SwapPanels):
+			if m.quickview != nil {
+				return m, nil // swap disabled while previewing
+			}
 			m.leftPanel, m.rightPanel = m.rightPanel, m.leftPanel
 			m.recalcLayout()
 			return m, nil
@@ -511,6 +553,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Delegate to active panel
 		cmd := m.activePanel().Update(msg)
+		// If quick view is following the cursor, re-load when the selection moved.
+		if m.quickview != nil && !m.quickFocus {
+			m.syncQuickView()
+		}
 		return m, cmd
 	}
 
@@ -524,6 +570,14 @@ func (m Model) View() string {
 
 	leftView := m.leftPanel.View(m.theme)
 	rightView := m.rightPanel.View(m.theme)
+	if m.quickview != nil {
+		qvView := m.quickview.View(m.theme, m.quickFocus)
+		if m.focus == FocusLeft {
+			rightView = qvView // driver is left, preview replaces right
+		} else {
+			leftView = qvView
+		}
+	}
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftView, rightView)
 
 	items := m.menuItems
@@ -925,4 +979,43 @@ func (m *Model) recalcLayout() {
 
 	m.leftPanel.SetSize(panelWidth, panelHeight)
 	m.rightPanel.SetSize(rightWidth, panelHeight)
+
+	if m.quickview != nil {
+		// The preview occupies the inactive pane's slot.
+		w := rightWidth
+		if m.focus == FocusRight {
+			w = panelWidth
+		}
+		m.quickview.SetSize(w, panelHeight)
+	}
+}
+
+// openQuickView turns the inactive pane into a live preview of the active
+// panel's current selection. Focus stays on the driver (listing) panel.
+func (m *Model) openQuickView() {
+	qv := quickview.New()
+	m.quickview = &qv
+	m.quickFocus = false
+	m.recalcLayout()
+	m.syncQuickView()
+}
+
+// closeQuickView restores the inactive pane to its listing.
+func (m *Model) closeQuickView() {
+	m.quickview = nil
+	m.quickFocus = false
+}
+
+// syncQuickView reloads the preview to match the driver's current selection,
+// but only when the selection actually changed.
+func (m *Model) syncQuickView() {
+	p := m.activePanel()
+	path := p.CurrentPath()
+	if path == m.quickview.Path() {
+		return
+	}
+	entry := p.CurrentEntry()
+	isDir := entry != nil && entry.IsDir()
+	available := !p.InArchive() // archive paths are not real OS files
+	m.quickview.SetFile(path, p.CurrentInfo(), isDir, available)
 }

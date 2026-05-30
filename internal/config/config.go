@@ -78,6 +78,7 @@ type KeyBindings struct {
 	CmdExec      StringOrList `toml:"cmd_exec"`
 	Terminal     StringOrList `toml:"terminal"`
 	ToggleHidden StringOrList `toml:"toggle_hidden"`
+	QuickView    StringOrList `toml:"quick_view"`
 }
 
 // StringOrList can unmarshal from either a single string or a list of strings.
@@ -159,6 +160,7 @@ func DefaultKeyBindings() KeyBindings {
 		CmdExec:      StringOrList{"ctrl+r"},
 		Terminal:     StringOrList{"ctrl+o"},
 		ToggleHidden: StringOrList{"ctrl+h"},
+		QuickView:    StringOrList{"ctrl+q"},
 	}
 }
 
@@ -238,6 +240,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.CmdExec, src.CmdExec)
 	mergeKey(&dst.Terminal, src.Terminal)
 	mergeKey(&dst.ToggleHidden, src.ToggleHidden)
+	mergeKey(&dst.QuickView, src.QuickView)
 }
 
 func mergeKey(dst *StringOrList, src StringOrList) {

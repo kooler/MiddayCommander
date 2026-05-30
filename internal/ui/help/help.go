@@ -97,6 +97,7 @@ func (m Model) rightEntries() []entry {
 		{"── File Operations ──", ""},
 		{"View file", fmtKeys(k.View)},
 		{"Edit file", fmtKeys(k.Edit)},
+		{"Quick view", fmtKeys(k.QuickView)},
 		{"Copy", fmtKeys(k.Copy)},
 		{"Move", fmtKeys(k.Move)},
 		{"Delete", fmtKeys(k.Delete)},

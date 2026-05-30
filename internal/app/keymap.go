@@ -27,6 +27,7 @@ type KeyMap struct {
 	CmdExec         key.Binding
 	Terminal        key.Binding
 	ToggleHidden    key.Binding
+	QuickView       key.Binding
 	SelectGroup     key.Binding
 	DeselectGroup   key.Binding
 	InvertSelection key.Binding
@@ -54,6 +55,7 @@ func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 		CmdExec:         binding(keys.CmdExec, "run cmd"),
 		Terminal:        binding(keys.Terminal, "terminal"),
 		ToggleHidden:    binding(keys.ToggleHidden, "toggle hidden"),
+		QuickView:       binding(keys.QuickView, "quick view"),
 		SelectGroup:     binding(keys.SelectGroup, "select group"),
 		DeselectGroup:   binding(keys.DeselectGroup, "deselect group"),
 		InvertSelection: binding(keys.InvertSelection, "invert selection"),
