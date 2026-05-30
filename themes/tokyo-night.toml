@@ -1,0 +1,75 @@
+name = "Tokyo Night"
+
+[palette]
+red       = "#f7768e"
+orange    = "#ff9e64"
+yellow    = "#e0af68"
+green     = "#9ece6a"
+teal      = "#73daca"
+cyan      = "#7dcfff"
+blue      = "#7aa2f7"
+purple    = "#bb9af7"
+magenta   = "#c0caf5"
+
+fg        = "#c0caf5"
+fg_dark   = "#a9b1d6"
+comment   = "#565f89"
+
+bg        = "#1a1b26"
+bg_dark   = "#16161e"
+bg_high   = "#24283b"
+bg_float  = "#1f2335"
+
+border    = "#3b4261"
+selection = "#33467c"
+black     = "#15161e"
+
+# ─── File Panels ─────────────────────────────────
+[panel]
+border_fg        = "border"
+border_bg        = "bg"
+border_active_fg = "blue"
+border_active_bg = "bg"
+header_fg        = "comment"
+header_bg        = "bg"
+header_active_fg = "cyan"
+header_active_bg = "bg"
+
+[panel.file]
+normal_fg        = "fg"
+normal_bg        = "bg"
+
+dir_fg           = "blue"
+dir_bg           = "bg"
+dir_bold         = true
+
+exec_fg          = "green"
+exec_bg          = "bg"
+
+symlink_fg       = "purple"
+symlink_bg       = "bg"
+
+cursor_fg        = "black"
+cursor_bg        = "cyan"
+
+cursor_dir_fg    = "black"
+cursor_dir_bg    = "blue"
+cursor_dir_bold  = true
+
+selected_fg      = "yellow"
+selected_bg      = "bg_high"
+selected_bold    = true
+
+# ─── Status Bar ──────────────────────────────────
+[statusbar]
+fg = "black"
+bg = "blue"
+
+# ─── Menu / F-Key Hints ─────────────────────────
+[menubar]
+fg            = "fg"
+bg            = "bg_high"
+fkey_hint_fg  = "fg_dark"
+fkey_hint_bg  = "bg_dark"
+fkey_label_fg = "fg"
+fkey_label_bg = "bg_high"
