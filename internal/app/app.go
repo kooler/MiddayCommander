@@ -43,6 +43,7 @@ const (
 	tagCopy    = "copy"
 	tagCopyAs  = "copyas"
 	tagMove    = "move"
+	tagMoveAs  = "moveas"
 	tagDelete  = "delete"
 	tagMkdir   = "mkdir"
 	tagRename  = "rename"
@@ -721,6 +722,13 @@ func (m Model) startMove() (tea.Model, tea.Cmd) {
 	m.pendingSources = sources
 	m.pendingDest = dest
 
+	if len(sources) == 1 {
+		defaultPath := filepath.Join(dest, filepath.Base(sources[0]))
+		d := dialog.NewInput("Move", "Move to:", defaultPath, tagMoveAs)
+		m.dialog = &d
+		return m, nil
+	}
+
 	msg := fmt.Sprintf("Move %d item(s) to %s?", len(sources), dest)
 	d := dialog.NewConfirm("Move", msg, tagMove)
 	m.dialog = &d
@@ -887,6 +895,18 @@ func (m Model) handleDialogResult(result dialog.Result) (tea.Model, tea.Cmd) {
 			ctx, ch := m.startProgressOp("Moving")
 			return m, tea.Batch(
 				moveCmd(ctx, ch, m.pendingSources, m.pendingDest),
+				waitForProgress(ch),
+			)
+		}
+	case tagMoveAs:
+		if result.Confirmed && strings.TrimSpace(result.Text) != "" && len(m.pendingSources) == 1 {
+			target := expandHome(result.Text)
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(m.pendingDest, target)
+			}
+			ctx, ch := m.startProgressOp("Moving")
+			return m, tea.Batch(
+				moveAsCmd(ctx, ch, m.pendingSources[0], target),
 				waitForProgress(ch),
 			)
 		}

@@ -72,6 +72,58 @@ func Move(ctx context.Context, sources []string, destDir string, progressFn func
 	return nil
 }
 
+// MoveAs moves a single source to destPath (a full path, not a directory).
+// Used for single-item move where the user may have renamed the target.
+// Tries os.Rename first (fast, same device), falls back to copy+delete for
+// cross-device moves.
+func MoveAs(ctx context.Context, source, destPath string, progressFn func(Progress)) error {
+	if err := ctx.Err(); err != nil {
+		return ErrCancelled
+	}
+
+	if absEq(source, destPath) {
+		return fmt.Errorf("source and destination are the same: %s", source)
+	}
+
+	totalFiles, totalBytes := countFilesAndBytes([]string{source})
+	agg := Progress{
+		Op:         OpMove,
+		TotalFiles: totalFiles,
+		TotalBytes: totalBytes,
+	}
+
+	// Try rename first (instant if same filesystem).
+	if err := os.Rename(source, destPath); err == nil {
+		agg.DoneFiles = totalFiles
+		agg.DoneBytes = totalBytes
+		agg.Current = filepath.Base(destPath)
+		if progressFn != nil {
+			progressFn(agg)
+		}
+		return nil
+	}
+
+	// Cross-device: copy then delete. Forward copy progress as a move op so
+	// the dialog keeps showing "Moving".
+	forward := func(p Progress) {
+		agg.Current = p.Current
+		agg.FileTotalBytes = p.FileTotalBytes
+		agg.FileDoneBytes = p.FileDoneBytes
+		agg.DoneFiles = p.DoneFiles
+		agg.DoneBytes = p.DoneBytes
+		if progressFn != nil {
+			progressFn(agg)
+		}
+	}
+	if err := CopyAs(ctx, source, destPath, forward); err != nil {
+		return fmt.Errorf("move (copy phase) %s: %w", source, err)
+	}
+	if err := os.RemoveAll(source); err != nil {
+		return fmt.Errorf("move (delete phase) %s: %w", source, err)
+	}
+	return nil
+}
+
 // Rename renames a single file or directory.
 func Rename(oldPath, newName string) error {
 	dir := filepath.Dir(oldPath)

@@ -82,6 +82,14 @@ func moveCmd(ctx context.Context, ch chan actions.Progress, sources []string, de
 	}
 }
 
+func moveAsCmd(ctx context.Context, ch chan actions.Progress, source, destPath string) tea.Cmd {
+	return func() tea.Msg {
+		err := actions.MoveAs(ctx, source, destPath, sendProgress(ctx, ch))
+		close(ch)
+		return moveDoneMsg{err: err}
+	}
+}
+
 func deleteCmd(ctx context.Context, ch chan actions.Progress, paths []string) tea.Cmd {
 	return func() tea.Msg {
 		err := actions.Delete(ctx, paths, sendProgress(ctx, ch))
