@@ -1,5 +1,7 @@
 # Midday Commander
 
+<img alt="Static Badge" src="https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square&link=https%3A%2F%2Fcloudsmith.com"></img>
+
 A modern dual-panel terminal file manager written in Go, inspired by Midnight Commander.
 
 Midday Commander (mdc) brings the classic dual-panel file management paradigm into the modern terminal with fuzzy finding, bookmarks, archive browsing, themes and customizable keybindings.
@@ -305,3 +307,10 @@ make test
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+## Package repository
+
+Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com).
+Cloudsmith is the only fully hosted, cloud-native, universal package management solution, that
+enables your organization to create, store and share packages in any format, to any place, with total
+confidence.
