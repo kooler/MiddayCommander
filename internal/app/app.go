@@ -470,6 +470,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Esc cancels an active quick search before the double-Esc-to-quit
+		// handler can swallow it, so the panel discards the typed query.
+		if msg.String() == "esc" {
+			if searching, _ := m.activePanel().Searching(); searching {
+				return m, m.activePanel().Update(msg)
+			}
+		}
+
 		// Double-Esc to quit
 		if msg.String() == "esc" {
 			now := time.Now()
