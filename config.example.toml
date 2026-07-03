@@ -38,6 +38,7 @@ delete        = "f8"
 rename        = "shift+f6"
 view          = "f3"
 edit          = "f4"
+copy_path     = ["shift+f5"]
 
 # Navigation
 up            = ["up", "k"]

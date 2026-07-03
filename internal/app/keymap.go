@@ -31,6 +31,7 @@ type KeyMap struct {
 	SelectGroup     key.Binding
 	DeselectGroup   key.Binding
 	InvertSelection key.Binding
+	CopyPath        key.Binding
 }
 
 // KeyMapFromConfig builds the global keymap from config.
@@ -59,6 +60,7 @@ func KeyMapFromConfig(keys config.KeyBindings) KeyMap {
 		SelectGroup:     binding(keys.SelectGroup, "select group"),
 		DeselectGroup:   binding(keys.DeselectGroup, "deselect group"),
 		InvertSelection: binding(keys.InvertSelection, "invert selection"),
+		CopyPath:        binding(keys.CopyPath, "copy path"),
 	}
 }
 

@@ -31,6 +31,7 @@ Midday Commander (mdc) brings the classic dual-panel file management paradigm in
 - **Quick search** - start typing to jump to matching files instantly
 - **External editor/viewer** - opens files in `$EDITOR` and `$PAGER`
 - **Quick view** - preview the selected file in the other pane (read-only, follows the cursor) with Ctrl+Q
+- **Copy path** - pick a path variant of the selected file and copy it to the clipboard with Shift+F5
 - **Execute files** - run executable files directly with Enter (configurable)
 - **Terminal access** - open shell in current directory with Ctrl+O
 - **Mouse support** - clickable menu bar and panel interaction
@@ -130,6 +131,7 @@ Now `mdcd` launches mdc; when you quit, the shell `cd`s into the directory the a
 | `Ctrl-T` | Theme picker (live preview) |
 | `Ctrl-H` | Toggle hidden files |
 | `Ctrl-Q` | Quick view - preview selected file in the other pane |
+| `Shift-F5` | Copy path - pick and copy a path variant of the selected file to the clipboard |
 
 ### Navigation
 

@@ -103,6 +103,7 @@ func (m Model) rightEntries() []entry {
 		{"Delete", fmtKeys(k.Delete)},
 		{"Make directory", fmtKeys(k.Mkdir)},
 		{"Rename", fmtKeys(k.Rename)},
+		{"Copy path", fmtKeys(k.CopyPath)},
 		{"", ""},
 		{"── Tools ──", ""},
 		{"Toggle hidden files", fmtKeys(k.ToggleHidden)},

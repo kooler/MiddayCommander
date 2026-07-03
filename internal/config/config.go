@@ -79,6 +79,7 @@ type KeyBindings struct {
 	Terminal     StringOrList `toml:"terminal"`
 	ToggleHidden StringOrList `toml:"toggle_hidden"`
 	QuickView    StringOrList `toml:"quick_view"`
+	CopyPath     StringOrList `toml:"copy_path"`
 }
 
 // StringOrList can unmarshal from either a single string or a list of strings.
@@ -109,10 +110,10 @@ func Default() Config {
 	return Config{
 		Theme: "",
 		Behavior: BehaviorConfig{
-			EnterAction: "edit",
-			SpaceAction: "preview",
-			ViewMode:    "pager",
-      ConfirmExecute:    boolPtr(true),
+			EnterAction:       "edit",
+			SpaceAction:       "preview",
+			ViewMode:          "pager",
+			ConfirmExecute:    boolPtr(true),
 			PauseAfterExecute: false,
 			ShowHidden:        boolPtr(true),
 		},
@@ -161,6 +162,7 @@ func DefaultKeyBindings() KeyBindings {
 		Terminal:     StringOrList{"ctrl+o"},
 		ToggleHidden: StringOrList{"ctrl+h"},
 		QuickView:    StringOrList{"ctrl+q"},
+		CopyPath:     StringOrList{"shift+f5"},
 	}
 }
 
@@ -189,16 +191,16 @@ func Load() Config {
 	if fileCfg.Behavior.SpaceAction != "" {
 		cfg.Behavior.SpaceAction = fileCfg.Behavior.SpaceAction
 	}
-  if fileCfg.Behavior.ViewMode != "" {
-    cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
-  }
-  if fileCfg.Behavior.ConfirmExecute != nil {
-    cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
-  }
-  cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
-  if fileCfg.Behavior.ShowHidden != nil {
-    cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
-  }
+	if fileCfg.Behavior.ViewMode != "" {
+		cfg.Behavior.ViewMode = fileCfg.Behavior.ViewMode
+	}
+	if fileCfg.Behavior.ConfirmExecute != nil {
+		cfg.Behavior.ConfirmExecute = fileCfg.Behavior.ConfirmExecute
+	}
+	cfg.Behavior.PauseAfterExecute = fileCfg.Behavior.PauseAfterExecute
+	if fileCfg.Behavior.ShowHidden != nil {
+		cfg.Behavior.ShowHidden = fileCfg.Behavior.ShowHidden
+	}
 
 	mergeKeys(&cfg.Keys, &fileCfg.Keys)
 	normalizeAllKeys(&cfg.Keys)
@@ -241,6 +243,7 @@ func mergeKeys(dst, src *KeyBindings) {
 	mergeKey(&dst.Terminal, src.Terminal)
 	mergeKey(&dst.ToggleHidden, src.ToggleHidden)
 	mergeKey(&dst.QuickView, src.QuickView)
+	mergeKey(&dst.CopyPath, src.CopyPath)
 }
 
 func mergeKey(dst *StringOrList, src StringOrList) {
@@ -303,6 +306,8 @@ func normalizeAllKeys(kb *KeyBindings) {
 	normalizeSlice(&kb.CmdExec)
 	normalizeSlice(&kb.Terminal)
 	normalizeSlice(&kb.ToggleHidden)
+	normalizeSlice(&kb.QuickView)
+	normalizeSlice(&kb.CopyPath)
 }
 
 // SaveTheme writes the theme name to the config file, preserving other settings.

@@ -59,6 +59,7 @@ func ShiftItems(cfg config.Config) []Item {
 		{cfg.Keys.FuzzyFind, "FZF"},
 		{cfg.Keys.Quit, "Quit"},
 		{cfg.Keys.Rename, "Rename"},
+		{cfg.Keys.CopyPath, "CpPath"},
 		{cfg.Keys.GoTo, "GoTo"},
 		{cfg.Keys.TogglePanel, "Panel"},
 		{cfg.Keys.SwapPanels, "Swap"},

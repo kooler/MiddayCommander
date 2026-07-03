@@ -18,6 +18,7 @@ import (
 	"github.com/kooler/MiddayCommander/internal/config"
 	"github.com/kooler/MiddayCommander/internal/ui/bookmarks"
 	"github.com/kooler/MiddayCommander/internal/ui/cmdexec"
+	"github.com/kooler/MiddayCommander/internal/ui/copypath"
 	"github.com/kooler/MiddayCommander/internal/ui/dialog"
 	"github.com/kooler/MiddayCommander/internal/ui/fuzzy"
 	"github.com/kooler/MiddayCommander/internal/ui/help"
@@ -73,6 +74,7 @@ type Model struct {
 	help        *help.Model
 	themePicker *themepicker.Model
 	cmdExec     *cmdexec.Model
+	copyPath    *copypath.Model
 
 	// Quick view: non-nil when the inactive pane shows a file preview.
 	// quickFocus toggles whether keys scroll the preview (true) or drive the
@@ -235,6 +237,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.bookmarks = nil
 		return m, nil
 
+	case copypath.DismissMsg:
+		m.copyPath = nil
+		return m, nil
+
 	// Fuzzy finder internal messages — route to fuzzy model
 	case fuzzy.FileWalkMsg:
 		if m.fuzzy != nil {
@@ -389,6 +395,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.bookmarks != nil {
 			newBM, cmd := m.bookmarks.Update(msg)
 			m.bookmarks = &newBM
+			return m, cmd
+		}
+
+		// Copy path overlay gets priority when active
+		if m.copyPath != nil {
+			newCP, cmd := m.copyPath.Update(msg)
+			m.copyPath = &newCP
 			return m, cmd
 		}
 
@@ -550,6 +563,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, m.keyMap.InvertSelection):
 			m.activePanel().InvertSelection()
 			return m, nil
+
+		case key.Matches(msg, m.keyMap.CopyPath):
+			return m.startCopyPath()
 		}
 
 		// Delegate to active panel
@@ -589,7 +605,11 @@ func (m Model) View() string {
 
 	screen := lipgloss.JoinVertical(lipgloss.Left, panels, fkeyView)
 
-	if m.help != nil {
+	if m.copyPath != nil {
+		box := m.copyPath.View(m.theme, m.width, m.height)
+		bw, bh := m.copyPath.BoxSize(m.width, m.height)
+		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
+	} else if m.help != nil {
 		box := m.help.View(m.theme, m.width, m.height)
 		bw, bh := m.help.BoxSize(m.width, m.height)
 		screen = overlay.Place(screen, box, m.width, m.height, bw, bh)
@@ -634,6 +654,8 @@ func (m Model) dispatchKey(raw string) (tea.Model, tea.Cmd) {
 		return m.startMkdir()
 	case contains(cfg.Rename, raw):
 		return m.startRename()
+	case contains(cfg.CopyPath, raw):
+		return m.startCopyPath()
 	case contains(cfg.View, raw):
 		return m.startView()
 	case contains(cfg.Edit, raw):
@@ -808,6 +830,19 @@ func (m Model) startThemePicker() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, themepicker.FetchRemote(localKeys)
+}
+
+func (m Model) startCopyPath() (tea.Model, tea.Cmd) {
+	e := m.activePanel().CurrentEntry()
+	if e == nil || e.Name() == ".." {
+		return m, nil
+	}
+	if m.activePanel().InArchive() {
+		return m, nil // archive entries aren't real files
+	}
+	cp := copypath.New(m.currentFilePath(), m.width, m.height)
+	m.copyPath = &cp
+	return m, nil
 }
 
 func (m Model) startCmdExec() (tea.Model, tea.Cmd) {
