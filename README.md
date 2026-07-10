@@ -52,6 +52,22 @@ Run: `mdc`
 
 Download a binary from the [Releases](https://github.com/kooler/MiddayCommander/releases) in Github.
 
+### Debian / Ubuntu (apt)
+
+Packages are hosted on [Cloudsmith](https://cloudsmith.io/~kooler/repos/mdc/). Configure the repository once, then install:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/kooler/mdc/setup.deb.sh' | sudo -E bash
+sudo apt install mdc
+```
+
+### RHEL / Fedora (dnf/yum)
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/kooler/mdc/setup.rpm.sh' | sudo -E bash
+sudo dnf install mdc
+```
+
 ### Using Mise en place
 
 ```bash

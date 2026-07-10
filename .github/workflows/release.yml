@@ -41,3 +41,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Set up Cloudsmith CLI
+        uses: cloudsmith-io/cloudsmith-cli-action@v2
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY }}
+
+      # CLOUDSMITH_REPO must be <org-slug>/<repo-slug> from your Cloudsmith repository.
+      - name: Publish packages to Cloudsmith
+        env:
+          CLOUDSMITH_REPO: kooler/mdc
+        run: |
+          for f in dist/*.deb; do
+            cloudsmith push deb "$CLOUDSMITH_REPO/any-distro/any-version" "$f"
+          done
+          for f in dist/*.rpm; do
+            cloudsmith push rpm "$CLOUDSMITH_REPO/any-distro/any-version" "$f"
+          done
