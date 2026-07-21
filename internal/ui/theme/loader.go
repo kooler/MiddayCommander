@@ -102,15 +102,15 @@ func loadThemeFile(path string) (ThemeFile, error) {
 	return tf, nil
 }
 
-// ListAvailable returns all available themes: the hardcoded default plus any
+// ListAvailable returns all available themes: the built-in themes plus any
 // TOML files found in ~/.config/mdc/themes/.
 func ListAvailable() []AvailableTheme {
-	result := []AvailableTheme{{
-		Key:    "",
-		Name:   "Default (MC Classic)",
-		Source: SourceDefault,
-		Theme:  Default(),
-	}}
+	result := builtinThemes()
+
+	seen := make(map[string]bool, len(result))
+	for _, b := range result {
+		seen[b.Key] = true
+	}
 
 	themesDir := filepath.Join(configDirPath(), "themes")
 	entries, err := os.ReadDir(themesDir)
@@ -123,6 +123,9 @@ func ListAvailable() []AvailableTheme {
 			continue
 		}
 		key := strings.TrimSuffix(e.Name(), ".toml")
+		if seen[key] {
+			continue // built-in takes precedence over a same-named local file
+		}
 		path := filepath.Join(themesDir, e.Name())
 		tf, err := loadThemeFile(path)
 		if err != nil {

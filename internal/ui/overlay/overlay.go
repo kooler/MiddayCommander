@@ -54,12 +54,12 @@ func RenderBox(title string, contentLines []string, footer string, width, height
 
 	var lines []string
 
-	// Top border with title
+	// Top border with title (width-aware so multibyte titles align correctly)
 	titleStr := " " + title + " "
-	if len(titleStr) > innerWidth {
-		titleStr = titleStr[:innerWidth]
+	if lipgloss.Width(titleStr) > innerWidth {
+		titleStr = ansi.Truncate(titleStr, innerWidth, "")
 	}
-	padLen := innerWidth - len(titleStr)
+	padLen := innerWidth - lipgloss.Width(titleStr)
 	if padLen < 0 {
 		padLen = 0
 	}

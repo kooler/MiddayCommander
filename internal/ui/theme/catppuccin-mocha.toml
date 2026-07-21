@@ -1,0 +1,73 @@
+name = "Catppuccin Mocha"
+
+[palette]
+rosewater = "#f5e0dc"
+flamingo  = "#f2cdcd"
+pink      = "#f5c2e7"
+mauve     = "#cba6f7"
+red       = "#f38ba8"
+maroon    = "#eba0ac"
+peach     = "#fab387"
+yellow    = "#f9e2af"
+green     = "#a6e3a1"
+teal      = "#94e2d5"
+sky       = "#89dceb"
+sapphire  = "#74c7ec"
+blue      = "#89b4fa"
+lavender  = "#b4befe"
+text      = "#cdd6f4"
+subtext1  = "#bac2de"
+subtext0  = "#a6adc8"
+overlay2  = "#9399b2"
+overlay1  = "#7f849c"
+overlay0  = "#6c7086"
+surface2  = "#585b70"
+surface1  = "#45475a"
+surface0  = "#313244"
+base      = "#1e1e2e"
+mantle    = "#181825"
+crust     = "#11111b"
+
+# ─── File Panels ─────────────────────────────────
+[panel]
+border_fg        = "surface2"
+border_bg        = "base"
+border_active_fg = "lavender"
+border_active_bg = "base"
+header_fg        = "subtext0"
+header_bg        = "base"
+header_active_fg = "lavender"
+header_active_bg = "base"
+
+[panel.file]
+normal_fg        = "text"
+normal_bg        = "base"
+dir_fg           = "blue"
+dir_bg           = "base"
+dir_bold         = true
+exec_fg          = "green"
+exec_bg          = "base"
+symlink_fg       = "pink"
+symlink_bg       = "base"
+cursor_fg        = "crust"
+cursor_bg        = "lavender"
+cursor_dir_fg    = "crust"
+cursor_dir_bg    = "blue"
+cursor_dir_bold  = true
+selected_fg      = "yellow"
+selected_bg      = "base"
+selected_bold    = true
+
+# ─── Status Bar ──────────────────────────────────
+[statusbar]
+fg = "crust"
+bg = "lavender"
+
+# ─── Menu / F-Key Hints ─────────────────────────
+[menubar]
+fg            = "text"
+bg            = "surface0"
+fkey_hint_fg  = "subtext1"
+fkey_hint_bg  = "crust"
+fkey_label_fg = "text"
+fkey_label_bg = "surface0"

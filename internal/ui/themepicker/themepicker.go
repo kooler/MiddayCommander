@@ -2,6 +2,7 @@ package themepicker
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -9,6 +10,9 @@ import (
 	"github.com/kooler/MiddayCommander/internal/ui/overlay"
 	"github.com/kooler/MiddayCommander/internal/ui/theme"
 )
+
+// spinnerFrames animates the "fetching remote themes" indicator.
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 // PreviewMsg is sent when the user navigates to a theme (for live preview).
 type PreviewMsg struct{ Theme theme.Theme }
@@ -29,22 +33,46 @@ type RemoteThemesMsg struct {
 	Themes []theme.AvailableTheme
 }
 
-// Model is the theme picker overlay.
-type Model struct {
-	entries []theme.AvailableTheme
-	cursor  int
-	offset  int
-	width   int
-	height  int
+// SpinnerTickMsg advances the "fetching remote themes" spinner.
+type SpinnerTickMsg struct{}
+
+// SpinnerTick returns a command that fires the next spinner frame.
+func SpinnerTick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg {
+		return SpinnerTickMsg{}
+	})
 }
 
-// New creates a new theme picker overlay.
-func New(available []theme.AvailableTheme, width, height int) Model {
-	return Model{
-		entries: available,
-		width:   width,
-		height:  height,
+// Model is the theme picker overlay.
+type Model struct {
+	entries   []theme.AvailableTheme
+	activeKey string // config key of the currently applied theme
+	cursor    int
+	offset    int
+	width     int
+	height    int
+	loading   bool // remote themes are still being fetched
+	spinner   int  // current spinner frame
+}
+
+// New creates a new theme picker overlay. activeKey is the config key of the
+// currently applied theme; the cursor opens on it so it's visible right away.
+func New(available []theme.AvailableTheme, activeKey string, width, height int) Model {
+	m := Model{
+		entries:   available,
+		activeKey: activeKey,
+		width:     width,
+		height:    height,
+		loading:   true,
 	}
+	for i, e := range available {
+		if e.Key == activeKey {
+			m.cursor = i
+			break
+		}
+	}
+	m.clampOffset()
+	return m
 }
 
 // FetchRemote returns a command that fetches remote themes from GitHub.
@@ -56,9 +84,19 @@ func FetchRemote(localKeys map[string]bool) tea.Cmd {
 	}
 }
 
-// HandleRemote merges remote themes into the picker's entries.
+// HandleRemote merges remote themes into the picker's entries and stops the
+// loading indicator.
 func (m *Model) HandleRemote(msg RemoteThemesMsg) {
 	m.entries = append(m.entries, msg.Themes...)
+	m.loading = false
+}
+
+// Loading reports whether remote themes are still being fetched.
+func (m Model) Loading() bool { return m.loading }
+
+// AdvanceSpinner moves to the next spinner frame.
+func (m *Model) AdvanceSpinner() {
+	m.spinner = (m.spinner + 1) % len(spinnerFrames)
 }
 
 // Update handles key events.
@@ -163,6 +201,21 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	for i := m.offset; i < end; i++ {
 		entry := m.entries[i]
 		isCursor := i == m.cursor
+		isActive := entry.Key == m.activeKey
+
+		// Gutter: a space, then a dot marking the active theme, then a space
+		// before the name — so the dot has an equal gap on each side. Rendered
+		// with the row background so it matches the rest of the line.
+		rowBg, gap := bg, bgStyle
+		if isCursor {
+			rowBg, gap = cursorBg, cursorStyle
+		}
+		markerCh := " "
+		if isActive {
+			markerCh = "●"
+		}
+		dot := lipgloss.NewStyle().Background(rowBg).Foreground(highlight).Render(markerCh)
+		gutter := gap.Render(" ") + dot + gap.Render(" ")
 
 		// Build prefix tag
 		var tag string
@@ -181,7 +234,7 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		}
 
 		display := entry.Name
-		maxNameW := innerW - 2 - len(tag)
+		maxNameW := innerW - 4 - len(tag) // 3-cell gutter + 1-col right margin
 		if len(display) > maxNameW {
 			display = display[:maxNameW-3] + "..."
 		}
@@ -189,9 +242,9 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		if isCursor {
 			var line string
 			if tag != "" {
-				line = " " + tagCursorStyle.Render(tag) + cursorStyle.Render(display)
+				line = gutter + tagCursorStyle.Render(tag) + cursorStyle.Render(display)
 			} else {
-				line = " " + cursorStyle.Render(display)
+				line = gutter + cursorStyle.Render(display)
 			}
 			lineW := lipgloss.Width(line)
 			if lineW < innerW {
@@ -201,9 +254,9 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		} else {
 			var line string
 			if tag != "" {
-				line = " " + tagStyle.Render(tag) + bgStyle.Render(display)
+				line = gutter + tagStyle.Render(tag) + bgStyle.Render(display)
 			} else {
-				line = " " + bgStyle.Render(display)
+				line = gutter + bgStyle.Render(display)
 			}
 			lineW := lipgloss.Width(line)
 			if lineW < innerW {
@@ -236,6 +289,11 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 		footer += dimStyle.Render(strings.Repeat(" ", innerW-footerWidth))
 	}
 
-	return overlay.RenderBox("Theme", contentLines, footer, boxW, boxH,
+	title := "Theme"
+	if m.loading {
+		title = "Theme  " + spinnerFrames[m.spinner] + " fetching remote…"
+	}
+
+	return overlay.RenderBox(title, contentLines, footer, boxW, boxH,
 		accent, bg, highlight)
 }

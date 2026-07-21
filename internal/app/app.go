@@ -127,12 +127,7 @@ func New(version string) Model {
 
 	right := panel.New(lfs, home, panelKM, cfg)
 
-	th := theme.Default()
-	if cfg.Theme != "" {
-		if loaded, err := theme.LoadByName(cfg.Theme); err == nil {
-			th = loaded
-		}
-	}
+	th := theme.Resolve(cfg.Theme)
 
 	return Model{
 		leftPanel:      left,
@@ -206,12 +201,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case themepicker.SpinnerTickMsg:
+		if m.themePicker != nil && m.themePicker.Loading() {
+			m.themePicker.AdvanceSpinner()
+			return m, themepicker.SpinnerTick()
+		}
+		return m, nil
+
 	case themepicker.PreviewMsg:
 		m.theme = msg.Theme
 		return m, nil
 
 	case themepicker.SelectMsg:
 		m.theme = msg.Theme
+		m.cfg.Theme = msg.Key
 		m.themePicker = nil
 		// Save remote theme file locally so it's available on next startup.
 		if msg.Source == theme.SourceRemote && len(msg.RawTOML) > 0 {
@@ -827,7 +830,11 @@ func (m Model) startBookmarks() (tea.Model, tea.Cmd) {
 func (m Model) startThemePicker() (tea.Model, tea.Cmd) {
 	m.themeBeforePick = m.theme
 	available := theme.ListAvailable()
-	tp := themepicker.New(available, m.width, m.height)
+	activeKey := m.cfg.Theme
+	if activeKey == "" {
+		activeKey = theme.DefaultKey
+	}
+	tp := themepicker.New(available, activeKey, m.width, m.height)
 	m.themePicker = &tp
 
 	// Build set of local keys so remote fetch skips duplicates.
@@ -837,7 +844,7 @@ func (m Model) startThemePicker() (tea.Model, tea.Cmd) {
 			localKeys[a.Key] = true
 		}
 	}
-	return m, themepicker.FetchRemote(localKeys)
+	return m, tea.Batch(themepicker.FetchRemote(localKeys), themepicker.SpinnerTick())
 }
 
 func (m Model) startCopyPath() (tea.Model, tea.Cmd) {
