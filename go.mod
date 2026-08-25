@@ -45,5 +45,5 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
 	golang.org/x/sys v0.38.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
