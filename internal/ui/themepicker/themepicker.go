@@ -76,6 +76,14 @@ func New(available []theme.AvailableTheme, activeKey string, width, height int) 
 	return m
 }
 
+// SetSize updates the screen size the box is laid out against, so a resized
+// terminal does not leave the cursor outside the visible window.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.clampOffset()
+}
+
 // FetchRemote returns a command that fetches remote themes from GitHub.
 // localKeys are theme keys already present locally (to avoid duplicates).
 func FetchRemote(localKeys map[string]bool) tea.Cmd {
@@ -160,13 +168,7 @@ func (m Model) resultHeight() int {
 }
 
 func (m *Model) clampOffset() {
-	rh := m.resultHeight()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rh {
-		m.offset = m.cursor - rh + 1
-	}
+	m.offset = overlay.ClampScroll(m.cursor, m.offset, m.resultHeight(), len(m.entries))
 }
 
 // View renders the theme picker as a floating box.

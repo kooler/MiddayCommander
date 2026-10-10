@@ -1382,6 +1382,27 @@ func (m *Model) recalcLayout() {
 		}
 		t.quickview.SetSize(w, panelHeight)
 	}
+
+	// One by one: a typed nil pointer in an interface is never nil, so these
+	// cannot be collected into a slice.
+	if m.fuzzy != nil {
+		m.fuzzy.SetSize(m.width, m.height)
+	}
+	if m.bookmarks != nil {
+		m.bookmarks.SetSize(m.width, m.height)
+	}
+	if m.servers != nil {
+		m.servers.SetSize(m.width, m.height)
+	}
+	if m.themePicker != nil {
+		m.themePicker.SetSize(m.width, m.height)
+	}
+	if m.cmdExec != nil {
+		m.cmdExec.SetSize(m.width, m.height)
+	}
+	if m.tablist != nil {
+		m.tablist.SetSize(m.width, m.height)
+	}
 }
 
 // openQuickView turns the inactive pane into a live preview of the active

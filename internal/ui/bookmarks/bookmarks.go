@@ -49,6 +49,14 @@ func New(store *bookmark.Store, currentPath string, width, height int) Model {
 	}
 }
 
+// SetSize updates the screen size the box is laid out against, so a resized
+// terminal does not leave the cursor outside the visible window.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.clampOffset()
+}
+
 // Update handles key events.
 func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.adding {
@@ -71,6 +79,8 @@ func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
 				return m, func() tea.Msg { return SelectMsg{Path: path} }
 			}
 			m.filtering = false
+			m.filter = ""
+			m.refilter()
 		case "backspace":
 			if start := uitext.PreviousGraphemeBoundary(m.filter, len(m.filter)); start >= 0 {
 				m.filter = m.filter[:start]
@@ -127,9 +137,11 @@ func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "a":
 		m.adding = true
 		m.addName = ""
+		m.clampOffset() // the input line shrinks the window
 	case "f":
 		m.filtering = true
 		m.filter = ""
+		m.clampOffset() // the input line shrinks the window
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		idx := int(msg.String()[0] - '0')
 		if idx < len(m.items) {
@@ -205,23 +217,19 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	return w, h
 }
 
+// resultHeight is the window both clampOffset and View must agree on. The
+// input line takes one of the rows.
 func (m Model) resultHeight() int {
 	_, boxH := m.BoxSize(m.width, m.height)
 	h := boxH - 4 // borders(2) + header(1) + footer(1)
-	if h < 1 {
-		h = 1
+	if m.filtering || m.adding {
+		h--
 	}
-	return h
+	return max(h, 1)
 }
 
 func (m *Model) clampOffset() {
-	rh := m.resultHeight()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rh {
-		m.offset = m.cursor - rh + 1
-	}
+	m.offset = overlay.ClampScroll(m.cursor, m.offset, m.resultHeight(), len(m.items))
 }
 
 // View renders the bookmark list as a floating box.
@@ -246,7 +254,6 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 	promptStyle := lipgloss.NewStyle().Background(bg).Foreground(accent).Bold(true)
 
 	// Filter or add input line
-	hasExtraLine := false
 	if m.filtering {
 		filterLine := promptStyle.Render(" Filter: ") + bgStyle.Render(m.filter+"_")
 		filterWidth := lipgloss.Width(filterLine)
@@ -254,7 +261,6 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			filterLine += bgStyle.Render(strings.Repeat(" ", innerW-filterWidth))
 		}
 		contentLines = append(contentLines, filterLine)
-		hasExtraLine = true
 	} else if m.adding {
 		addLine := promptStyle.Render(" Name: ") + bgStyle.Render(m.addName+"_")
 		addWidth := lipgloss.Width(addLine)
@@ -262,14 +268,10 @@ func (m Model) View(th theme.Theme, screenWidth, screenHeight int) string {
 			addLine += bgStyle.Render(strings.Repeat(" ", innerW-addWidth))
 		}
 		contentLines = append(contentLines, addLine)
-		hasExtraLine = true
 	}
 
 	// Bookmark list
 	rh := m.resultHeight()
-	if hasExtraLine {
-		rh--
-	}
 	end := m.offset + rh
 	if end > len(m.items) {
 		end = len(m.items)

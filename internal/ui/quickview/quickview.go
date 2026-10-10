@@ -175,7 +175,11 @@ func (m *Model) applyContent(buf []byte, truncated bool, err error) {
 
 // Update handles scroll keys; only meaningful while focused.
 func (m *Model) Update(msg tea.KeyMsg) {
-	maxOff := m.maxOffset()
+	visible := len(m.lines)
+	if m.kind != kindText {
+		visible = 0
+	}
+	maxOff := max(0, visible-m.height)
 	switch msg.String() {
 	case "up", "k":
 		m.offset--
@@ -194,23 +198,13 @@ func (m *Model) Update(msg tea.KeyMsg) {
 }
 
 func (m *Model) clampOffset() {
-	if max := m.maxOffset(); m.offset > max {
-		m.offset = max
-	}
-	if m.offset < 0 {
-		m.offset = 0
-	}
-}
-
-func (m Model) maxOffset() int {
+	visible := len(m.lines)
 	if m.kind != kindText {
-		return 0
+		visible = 0
 	}
-	max := len(m.lines) - m.height
-	if max < 0 {
-		max = 0
-	}
-	return max
+	// quickview scrolls offset directly (no cursor); feed offset as cursor so
+	// ClampScroll preserves it while capping at max(0, visible-height).
+	m.offset = overlay.ClampScroll(m.offset, m.offset, m.height, visible)
 }
 
 // View renders the preview as a bordered box, matching the panel layout.
@@ -309,9 +303,13 @@ func (m Model) centered(width int, msgs ...string) []string {
 func (m Model) footerText() string {
 	switch m.kind {
 	case kindText:
+		maxOff := 0
+		if maxOff = len(m.lines) - m.height; maxOff < 0 {
+			maxOff = 0
+		}
 		pct := 100
-		if max := m.maxOffset(); max > 0 {
-			pct = m.offset * 100 / max
+		if maxOff > 0 {
+			pct = m.offset * 100 / maxOff
 		}
 		s := fmt.Sprintf(" %d%% ", pct)
 		if m.truncated {

@@ -65,7 +65,17 @@ func New(rows []Row, activeIndex int, width, height, tabCount, maxTabs int) Mode
 	if activeIndex >= 0 && activeIndex < len(rows) {
 		cursor = activeIndex
 	}
-	return Model{rows: rows, visible: visible, cursor: cursor, width: width, height: height, tabCount: tabCount, maxTabs: maxTabs}
+	m := Model{rows: rows, visible: visible, cursor: cursor, width: width, height: height, tabCount: tabCount, maxTabs: maxTabs}
+	m.clampOffset()
+	return m
+}
+
+// SetSize updates the screen size the box is laid out against, so a resized
+// terminal does not leave the cursor outside the visible window.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.clampOffset()
 }
 
 func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -107,6 +117,7 @@ func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "f":
 		m.filtering = true
 		m.filter = ""
+		m.clampOffset() // the filter line shrinks the window
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		n := int(msg.String()[0] - '0') // 0 is the tenth
 		if n == 0 {
@@ -132,6 +143,8 @@ func (m Model) updateFiltering(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, func() tea.Msg { return JumpMsg{Index: idx} }
 		}
 		m.filtering = false
+		m.filter = ""
+		m.refilter()
 	case "backspace":
 		if start := uitext.PreviousGraphemeBoundary(m.filter, len(m.filter)); start >= 0 {
 			m.filter = m.filter[:start]
@@ -212,20 +225,19 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	return w, h
 }
 
+// resultHeight is the row count of the results area, the window that both
+// clampOffset and View must agree on. The filter line takes one of the rows.
 func (m Model) resultHeight() int {
 	_, boxH := m.BoxSize(m.width, m.height)
 	h := boxH - 4 // borders(2) + header(1) + footer(1)
+	if m.filtering {
+		h-- // filter input line
+	}
 	return max(h, 1)
 }
 
 func (m *Model) clampOffset() {
-	rh := m.resultHeight()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rh {
-		m.offset = m.cursor - rh + 1
-	}
+	m.offset = overlay.ClampScroll(m.cursor, m.offset, m.resultHeight(), len(m.visible))
 }
 
 func (m Model) columnWidths() (numW, leftW, rightW int) {
@@ -275,9 +287,6 @@ func (m Model) View(screenWidth, screenHeight int) string {
 	}
 
 	rh := m.resultHeight()
-	if m.filtering {
-		rh--
-	}
 	end := min(m.offset+rh, len(m.visible))
 	for i := m.offset; i < end; i++ {
 		row := m.rows[m.visible[i]]

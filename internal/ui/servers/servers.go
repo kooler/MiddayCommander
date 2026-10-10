@@ -85,6 +85,14 @@ func New(store *remote.Store, width, height int) Model {
 	}
 }
 
+// SetSize updates the screen size the box is laid out against, so a resized
+// terminal does not leave the cursor outside the visible window.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.clampOffset()
+}
+
 func (m Model) Update(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch m.mode {
 	case modeForm:
@@ -125,6 +133,7 @@ func (m Model) updateList(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "f":
 		m.mode = modeFilter
 		m.filter = ""
+		m.clampOffset() // the input line shrinks the window
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		return m.connectAt(int(msg.String()[0] - '0'))
 	}
@@ -149,6 +158,11 @@ func (m Model) updateFilter(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.refilter()
 	case "enter":
 		m.mode = modeList
+		if len(m.items) == 0 {
+			m.filter = ""
+			m.refilter()
+			return m, nil
+		}
 		return m.connectAt(m.cursor)
 	case "backspace":
 		if len(m.filter) > 0 {
@@ -335,23 +349,19 @@ func (m Model) BoxSize(screenWidth, screenHeight int) (int, int) {
 	return w, h
 }
 
+// resultHeight is the window both clampOffset and View must agree on. The
+// filter input line takes one of the rows.
 func (m Model) resultHeight() int {
 	_, boxH := m.BoxSize(m.width, m.height)
 	h := boxH - 4
-	if h < 1 {
-		h = 1
+	if m.mode == modeFilter {
+		h--
 	}
-	return h
+	return max(h, 1)
 }
 
 func (m *Model) clampOffset() {
-	rh := m.resultHeight()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rh {
-		m.offset = m.cursor - rh + 1
-	}
+	m.offset = overlay.ClampScroll(m.cursor, m.offset, m.resultHeight(), len(m.items))
 }
 
 func (m Model) View(_ theme.Theme, screenWidth, screenHeight int) string {
@@ -444,7 +454,6 @@ func (m Model) listLines(st styles) []string {
 	rh := m.resultHeight()
 	if m.mode == modeFilter {
 		lines = append(lines, st.key.Render(" Filter: ")+st.base.Render(pad(m.filter+"_", st.innerW-9)))
-		rh--
 	}
 
 	if len(m.items) == 0 {

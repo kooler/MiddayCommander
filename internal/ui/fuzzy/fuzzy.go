@@ -63,13 +63,17 @@ func (m Model) Init() tea.Cmd {
 	return walkFilesCmd(m.rootDir)
 }
 
+// SetSize updates the screen size the box is laid out against, so a resized
+// terminal does not leave the cursor outside the visible window.
+func (m *Model) SetSize(w, h int) {
+	m.width = w
+	m.height = h
+	m.clampOffset()
+}
+
 // Update handles messages.
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-
 	case FileWalkMsg:
 		m.allPaths = append(m.allPaths, msg.Paths...)
 		m.walking = !msg.Done
@@ -241,13 +245,7 @@ func shiftIdxs(idxs []int, offset int) []int {
 }
 
 func (m *Model) clampOffset() {
-	rh := m.resultHeight()
-	if m.cursor < m.offset {
-		m.offset = m.cursor
-	}
-	if m.cursor >= m.offset+rh {
-		m.offset = m.cursor - rh + 1
-	}
+	m.offset = overlay.ClampScroll(m.cursor, m.offset, m.resultHeight(), len(m.matches))
 }
 
 func (m *Model) refilter() {
