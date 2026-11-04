@@ -527,7 +527,7 @@ func (m *Model) selectAndSize() tea.Cmd {
 		if err != nil {
 			root = path
 		}
-		filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return nil // unreadable entries are skipped, as du does
 			}
