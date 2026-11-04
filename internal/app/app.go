@@ -252,6 +252,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case panel.DirSizeMsg:
+		for i := range m.tabs {
+			_ = m.tabs[i].leftPanel.HandleDirSize(msg) || m.tabs[i].rightPanel.HandleDirSize(msg)
+		}
+		return m, nil
+
 	case panel.RestoreCursorMsg:
 		for i := range m.tabs {
 			if m.tabs[i].leftPanel.Owns(msg.ID) {

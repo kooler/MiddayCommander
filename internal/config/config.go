@@ -22,7 +22,7 @@ type Config struct {
 type BehaviorConfig struct {
 	// What Enter does on a file: "edit" (default), "preview", or "execute"
 	EnterAction string `toml:"enter_action"`
-	// What Space does on a file: "preview" (default) or "edit"
+	// What Space does: "preview" (default) or "edit" on a file, or "select" to tag the entry and compute directory sizes (Total Commander style)
 	SpaceAction string `toml:"space_action"`
 	// ViewMode controls how F3 opens files: "pager" (default, uses $PAGER/less) or "system" (OS default app)
 	ViewMode string `toml:"view_mode"`

@@ -42,11 +42,12 @@ type Model struct {
 	// stack is the chain of locations descended into, the last being on
 	// screen. An archive or server pushes; ".." at a root pops.
 	stack      []vfs.Location
-	entries    []fs.DirEntry // directory contents (sorted)
-	infos      []fs.FileInfo // cached FileInfo for each entry
-	cursor     int           // highlighted entry index
-	offset     int           // scroll offset for viewport
-	selected   map[int]bool  // tagged/selected entries
+	entries    []fs.DirEntry    // directory contents (sorted)
+	infos      []fs.FileInfo    // cached FileInfo for each entry
+	cursor     int              // highlighted entry index
+	offset     int              // scroll offset for viewport
+	selected   map[int]bool     // tagged/selected entries
+	dirSizes   map[string]int64 // computed directory sizes by full path, -1 while pending
 	sortMode   SortMode
 	showHidden bool // whether to show dotfiles
 	width      int
@@ -319,6 +320,7 @@ func (m *Model) HandleDirLoaded(msg DirLoadedMsg) bool {
 	}
 
 	m.selected = make(map[int]bool)
+	m.dirSizes = nil
 	if m.cursor >= len(m.entries) {
 		m.cursor = max(0, len(m.entries)-1)
 	}
@@ -490,12 +492,72 @@ func (m *Model) handleEnter() tea.Cmd {
 
 func (m *Model) handleSpace() tea.Cmd {
 	e := m.CurrentEntry()
+	if m.cfg.Behavior.SpaceAction == "select" {
+		return m.selectAndSize()
+	}
 	if e == nil || IsDirLike(m, e) || !m.IsLocal() {
 		return nil
 	}
 	// Space on file = preview
 	path := m.CurrentPath()
 	return func() tea.Msg { return PreviewFileMsg{Path: path} }
+}
+
+// selectAndSize toggles the entry under the cursor, Total Commander style:
+// the cursor stays put, and a directory gets its size computed.
+func (m *Model) selectAndSize() tea.Cmd {
+	m.toggleSelect()
+	e := m.CurrentEntry()
+	if e == nil || !IsDirLike(m, e) || !m.IsLocal() || e.Name() == ".." {
+		return nil
+	}
+	path := m.CurrentPath()
+	if _, ok := m.dirSizes[path]; ok {
+		return nil // already sized or being sized
+	}
+	if m.dirSizes == nil {
+		m.dirSizes = make(map[string]int64)
+	}
+	m.dirSizes[path] = -1
+	id := m.id
+	return func() tea.Msg {
+		var size int64
+		// WalkDir doesn't follow a symlinked root, so resolve it first.
+		root, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			root = path
+		}
+		filepath.WalkDir(root, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil // unreadable entries are skipped, as du does
+			}
+			if info, err := d.Info(); err == nil {
+				size += info.Size()
+			}
+			return nil
+		})
+		return DirSizeMsg{ID: id, Path: path, Size: size}
+	}
+}
+
+// DirSizeMsg is sent when a directory size computation completes.
+type DirSizeMsg struct {
+	ID   uint64
+	Path string
+	Size int64
+}
+
+// HandleDirSize records a computed size, reporting whether it belonged to
+// this panel. A result whose pending marker was cleared by a reload is stale
+// and dropped.
+func (m *Model) HandleDirSize(msg DirSizeMsg) bool {
+	if msg.ID != m.id {
+		return false
+	}
+	if size, ok := m.dirSizes[msg.Path]; ok && size < 0 {
+		m.dirSizes[msg.Path] = msg.Size
+	}
+	return true
 }
 
 func (m *Model) enterArchive(archivePath string) tea.Cmd {

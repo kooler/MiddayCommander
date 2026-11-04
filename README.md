@@ -261,7 +261,8 @@ theme = "catppuccin-mocha"
 [behavior]
 # What Enter does on a file: "edit", "preview", or "execute"
 enter_action = "edit"
-# What Space does on a file: "preview" or "edit"
+# What Space does: "preview" or "edit" on a file, or "select" to tag
+# the entry and compute directory sizes (Total Commander style)
 space_action = "preview"
 # Whether to ask for confirmation before executing a file.
 confirm_execute = true
